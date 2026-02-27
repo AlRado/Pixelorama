@@ -123,7 +123,7 @@ const LANGUAGES_DICT := {
 	"uk_UA": ["Українська", "Ukrainian"],
 }
 const SUPPORTED_IMAGE_TYPES: PackedStringArray = [
-	"png", "bmp", "hdr", "jpg", "jpeg", "svg", "tga", "webp"
+	"png", "bmp", "hdr", "jpg", "jpeg", "svg", "tga", "webp", "exr"
 ]
 ## The file path used for the [member config_cache] file.
 const CONFIG_PATH := "user://config.ini"
@@ -834,7 +834,7 @@ func _ready() -> void:
 					update_grids(value)
 			else:
 				set(pref, value)
-	if OS.is_sandboxed():
+	if OS.is_sandboxed() or OS.has_feature("mobile"):
 		Global.use_native_file_dialogs = true
 	await get_tree().process_frame
 	project_switched.emit()

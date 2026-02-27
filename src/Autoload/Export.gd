@@ -4,7 +4,7 @@ enum ExportTab { IMAGE, SPRITESHEET }
 enum Orientation { COLUMNS, ROWS, TAGS_BY_ROW, TAGS_BY_COLUMN }
 enum AnimationDirection { FORWARD, BACKWARDS, PING_PONG }
 ## See file_format_string, file_format_description, and ExportDialog.gd
-enum FileFormat { PNG, WEBP, JPEG, GIF, APNG, MP4, AVI, OGV, MKV, WEBM }
+enum FileFormat { PNG, WEBP, JPEG, EXR, GIF, APNG, MP4, AVI, OGV, MKV, WEBM }
 enum { VISIBLE_LAYERS, SELECTED_LAYERS }
 enum ExportFrames { ALL_FRAMES, SELECTED_FRAMES }
 
@@ -30,6 +30,7 @@ var file_format_dictionary: Dictionary[FileFormat, Array] = {
 	FileFormat.PNG: [".png", "PNG Image"],
 	FileFormat.WEBP: [".webp", "WebP Image"],
 	FileFormat.JPEG: [".jpg", "JPG Image"],
+	FileFormat.EXR: [".exr", "EXR Image"],
 	FileFormat.GIF: [".gif", "GIF Image"],
 	FileFormat.APNG: [".apng", "APNG Image"],
 	FileFormat.MP4: [".mp4", "MPEG-4 Video"],
@@ -53,6 +54,7 @@ var export_json := false
 var split_layers := false
 var trim_images := false
 var erase_unselected_area := false
+var overwrite_asked := false
 
 # Spritesheet options
 var orientation := Orientation.COLUMNS
@@ -342,6 +344,9 @@ func export_processed_images(
 	# Stop export if directory path or file name are not valid
 	var dir_exists := DirAccess.dir_exists_absolute(project.export_directory_path)
 	var is_valid_filename := project.file_name.is_valid_filename()
+	if project.export_directory_path.begins_with("content://"):
+		dir_exists = true
+		is_valid_filename = true
 	if not dir_exists:
 		if is_valid_filename:  # Directory path not valid, file name is valid
 			export_dialog.open_path_validation_alert_popup(0)
@@ -355,6 +360,8 @@ func export_processed_images(
 	var multiple_files := false
 	if current_tab == ExportTab.IMAGE and not is_single_file_format(project):
 		multiple_files = true if processed_images.size() > 1 else false
+	if OS.get_name() == "Android":
+		multiple_files = false
 	# Check export paths
 	var export_paths: PackedStringArray = []
 	var paths_of_existing_files := ""
@@ -385,10 +392,10 @@ func export_processed_images(
 				paths_of_existing_files += export_path
 		export_paths.append(export_path)
 		# Only get one export path if single file animated image is exported
-		if is_single_file_format(project):
+		if is_single_file_format(project) or OS.get_name() == "Android":
 			break
 
-	if not paths_of_existing_files.is_empty():  # If files already exist
+	if not paths_of_existing_files.is_empty() and not overwrite_asked:  # If files already exist
 		# Ask user if they want to overwrite the files
 		export_dialog.open_file_exists_alert_popup(tr(file_exists_alert) % paths_of_existing_files)
 		# Stops the function until the user decides if they want to overwrite
@@ -460,13 +467,7 @@ func export_processed_images(
 	else:
 		for i in range(processed_images.size()):
 			if OS.has_feature("web"):
-				if project.file_format == FileFormat.PNG:
-					JavaScriptBridge.download_buffer(
-						processed_images[i].image.save_png_to_buffer(),
-						export_paths[i].get_file(),
-						"image/png"
-					)
-				elif project.file_format == FileFormat.WEBP:
+				if project.file_format == FileFormat.WEBP:
 					JavaScriptBridge.download_buffer(
 						processed_images[i].image.save_webp_to_buffer(),
 						export_paths[i].get_file(),
@@ -478,6 +479,12 @@ func export_processed_images(
 						export_paths[i].get_file(),
 						"image/jpeg"
 					)
+				else:
+					JavaScriptBridge.download_buffer(
+						processed_images[i].image.save_png_to_buffer(),
+						export_paths[i].get_file(),
+						"image/png"
+					)
 
 			else:
 				var err: Error
@@ -487,11 +494,15 @@ func export_processed_images(
 					err = processed_images[i].image.save_webp(export_paths[i])
 				elif project.file_format == FileFormat.JPEG:
 					err = processed_images[i].image.save_jpg(export_paths[i], save_quality)
+				elif project.file_format == FileFormat.EXR:
+					err = processed_images[i].image.save_exr(export_paths[i])
 				if err != OK:
 					Global.popup_error(
 						tr("File failed to save. Error code %s (%s)") % [err, error_string(err)]
 					)
 					return false
+			if OS.get_name() == "Android":
+				break
 
 	Global.notification_label("File(s) exported")
 	# Store settings for quick export and when the dialog is opened again
