@@ -266,10 +266,11 @@ var preferences: Array[Preference] = [
 		true
 	),
 	Preference.new("tablet_driver", "Drivers/DriversContainer/TabletDriver", "selected", 0),
-	Preference.new("author_display_name", "Author/AuthorContainer/DisplayName", "text", ""),
-	Preference.new("author_real_name", "Author/AuthorContainer/RealName", "text", ""),
-	Preference.new("author_contact", "Author/AuthorContainer/Contact", "text", ""),
-	Preference.new("author_company", "Author/AuthorContainer/CompanyStudio", "text", ""),
+	Preference.new("author_display_name", "Attribution/AuthorContainer/DisplayName", "text", ""),
+	Preference.new("author_real_name", "Attribution/AuthorContainer/RealName", "text", ""),
+	Preference.new("author_contact", "Attribution/AuthorContainer/Contact", "text", ""),
+	Preference.new("author_company", "Attribution/AuthorContainer/CompanyStudio", "text", ""),
+	Preference.new("default_licence", "Attribution/LicenseProperties/LicenceName", "text", ""),
 ]
 
 var content_list := PackedStringArray([])
@@ -438,7 +439,7 @@ func _ready() -> void:
 		# This is needed because color_changed doesn't fire if the color changes in code
 		if typeof(value) == TYPE_VECTOR2 or typeof(value) == TYPE_COLOR:
 			is_default = value.is_equal_approx(pref.default_value)
-		disable_restore_default_button(restore_default_button, is_default)
+		restore_default_button.set_disabled_status(is_default)
 	_on_theme_switched()
 	SteamManager.set_achievement("ACH_PREFERENCES")
 
@@ -456,7 +457,7 @@ func _on_Preference_value_changed(value, pref: Preference, button: RestoreDefaul
 	var disable: bool = Global.get(prop) == default_value
 	if typeof(value) == TYPE_COLOR:
 		disable = Global.get(prop).is_equal_approx(default_value)
-	disable_restore_default_button(button, disable)
+	button.set_disabled_status(disable)
 
 
 ## Add fonts to the font option button.
@@ -488,7 +489,7 @@ func _on_theme_switched() -> void:
 		var node := right_side.get_node(pref.node_path)
 		pref.default_value = value
 		pref.default_button.default_value = pref.default_value
-		disable_restore_default_button(pref.default_button, true)
+		pref.default_button.set_disabled_status(true)
 		if node is ValueSlider:
 			node.set_value_no_signal_update_display(value)
 		else:
@@ -501,18 +502,9 @@ func preference_update(require_restart := false) -> void:
 		return
 
 
-func disable_restore_default_button(button: RestoreDefaultButton, disable: bool) -> void:
-	button.disabled = disable
-	if disable:
-		button.mouse_default_cursor_shape = Control.CURSOR_ARROW
-		button.tooltip_text = ""
-	else:
-		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		button.tooltip_text = "Restore default value"
-
-
 func _on_PreferencesDialog_about_to_show() -> void:
 	add_tabs(false)
+	list.grab_focus.call_deferred()
 
 
 func add_tabs(changed_language := false) -> void:
