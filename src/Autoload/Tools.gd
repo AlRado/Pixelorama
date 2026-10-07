@@ -15,6 +15,9 @@ enum Dynamics { NONE, PRESSURE, VELOCITY }
 const XY_LINE := Vector2(-0.70710677, 0.70710677)
 const X_MINUS_Y_LINE := Vector2(0.70710677, 0.70710677)
 
+var active_multi_state_tools := 0:
+	set(value):
+		active_multi_state_tools = clamp(value, 0, 2)
 var active_button := -1
 var picking_color_for := MOUSE_BUTTON_LEFT
 var horizontal_mirror := false
@@ -155,6 +158,14 @@ var tools: Dictionary[String, Tool] = {
 		"Bucket",
 		"fill",
 		"res://src/Tools/DesignTools/Bucket.tscn",
+		[Global.LayerTypes.PIXEL, Global.LayerTypes.TILEMAP]
+	),
+	"Gradient":
+	Tool.new(
+		"Gradient",
+		"Gradient",
+		"gradient",
+		"res://src/Tools/DesignTools/Gradient.tscn",
 		[Global.LayerTypes.PIXEL, Global.LayerTypes.TILEMAP]
 	),
 	"Shading":
@@ -543,8 +554,8 @@ func get_tool(button: int) -> Slot:
 func assign_tool(tool_name: String, button: int, allow_refresh := false) -> void:
 	if Global.single_tool_mode and button == MOUSE_BUTTON_LEFT:
 		assign_tool(tool_name, MOUSE_BUTTON_RIGHT, allow_refresh)
-	var slot: Slot = _slots[button]
-	var panel: Node = _panels[button]
+	var slot := _slots[button]
+	var panel := _panels[button]
 
 	if slot.tool_node != null:
 		if slot.tool_node.name == tool_name and not allow_refresh:
@@ -576,8 +587,8 @@ func default_color() -> void:
 
 
 func swap_color() -> void:
-	var left = _slots[MOUSE_BUTTON_LEFT].color
-	var right = _slots[MOUSE_BUTTON_RIGHT].color
+	var left := _slots[MOUSE_BUTTON_LEFT].color
+	var right := _slots[MOUSE_BUTTON_RIGHT].color
 	assign_color(right, MOUSE_BUTTON_LEFT, false)
 	assign_color(left, MOUSE_BUTTON_RIGHT, false)
 
@@ -682,6 +693,16 @@ func is_placing_tiles() -> bool:
 	return Global.current_project.get_current_cel() is CelTileMap and TileSetPanel.placing_tiles
 
 
+func selection_tool_has_selection() -> bool:
+	if not Global.current_project.has_selection:
+		return false
+	for mouse_button in _slots:
+		var slot := _slots[mouse_button]
+		if slot.tool_node is BaseSelectionTool:
+			return true
+	return false
+
+
 func _get_closest_point_to_grid(pos: Vector2, distance: float, grid_pos: Vector2) -> Vector2:
 	# If the cursor is close to the start/origin of a grid cell, snap to that
 	var snap_distance := distance * Vector2.ONE
@@ -746,6 +767,23 @@ func snap_to_rectangular_grid_center(
 	pos: Vector2, grid_size: Vector2i, grid_offset: Vector2i, snapping_distance := 9999.0
 ) -> Vector2:
 	var grid_center := pos.snapped(grid_size) + Vector2(grid_size / 2)
+
+	# keeping grid_center as is would have been fine but this adds extra accuracy as to
+	# which snap point (from the list below) is closest to mouse and occupy THAT point
+	var t_l := grid_center + Vector2(-grid_size.x, -grid_size.y)
+	var t_c := grid_center + Vector2(0, -grid_size.y)  # t_c is for "top centre" and so on...
+	var t_r := grid_center + Vector2(grid_size.x, -grid_size.y)
+	var m_l := grid_center + Vector2(-grid_size.x, 0)
+	var m_c := grid_center
+	var m_r := grid_center + Vector2(grid_size.x, 0)
+	var b_l := grid_center + Vector2(-grid_size.x, grid_size.y)
+	var b_c := grid_center + Vector2(0, grid_size.y)
+	var b_r := grid_center + Vector2(grid_size.x, grid_size.y)
+	var vec_arr: PackedVector2Array = [t_l, t_c, t_r, m_l, m_c, m_r, b_l, b_c, b_r]
+	for vec in vec_arr:
+		if vec.distance_to(pos) < grid_center.distance_to(pos):
+			grid_center = vec
+
 	grid_center += Vector2(grid_offset)
 	if snapping_distance < 0:
 		pos = grid_center.floor()
@@ -926,6 +964,8 @@ func _cel_switched() -> void:
 	# Do not make any changes when its the same type of layer, or an audio layer
 	if layer_type == _curr_layer_type or layer_type in [Global.LayerTypes.AUDIO]:
 		return
+	quick_assign_tool_revert(MOUSE_BUTTON_RIGHT)
+	quick_assign_tool_revert(MOUSE_BUTTON_LEFT)
 	_show_relevant_tools(layer_type)
 
 

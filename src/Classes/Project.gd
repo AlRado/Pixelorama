@@ -25,6 +25,7 @@ var name := "":
 		var project_index := Global.projects.find(self)
 		if project_index < Global.tabs.tab_count and project_index > -1:
 			Global.tabs.set_tab_title(project_index, name)
+		export_profile.file_name = name
 var size: Vector2i:
 	set = _size_changed
 var undo_redo := UndoRedo.new()
@@ -41,12 +42,13 @@ var fill_color := Color(0)
 var has_changed := false:
 	set(value):
 		has_changed = value
+		var tab_index := Global.projects.find(self)
 		if value:
 			Global.project_data_changed.emit(self)
-			Global.tabs.set_tab_title(Global.tabs.current_tab, name + "(*)")
+			Global.tabs.set_tab_title(tab_index, name + "(*)")
 			JavaScriptBridge.eval("setUnsavedChanges(true);")
 		else:
-			Global.tabs.set_tab_title(Global.tabs.current_tab, name)
+			Global.tabs.set_tab_title(tab_index, name)
 			JavaScriptBridge.eval("setUnsavedChanges(false);")
 # frames and layers Arrays should generally only be modified directly when
 # opening/creating a project. When modifying the current project, use
@@ -61,6 +63,7 @@ var selected_cels := [[0, 0]]  ## Array of Arrays of 2 integers (frame & layer)
 ## array just contains the indices of the layers in increasing order.
 ## See [method order_layers].
 var ordered_layers: Array[int] = [0]
+var next_keyframe_id := 0
 
 var animation_tags: Array[AnimationTag] = []:
 	set(value):
@@ -112,14 +115,11 @@ var cameras_zoom: PackedVector2Array = [
 ]
 var cameras_offset: PackedVector2Array = [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO]
 
-# Export directory path and export file name
-var save_path := ""
-var export_directory_path := ""
-var file_name := "untitled"
-var file_format := Export.FileFormat.PNG
+var save_path := ""  ## Path the pxo gets saved to (or is loaded from)
 var was_exported := false
 var export_overwrite := false
 var backup_path := ""
+var export_profile := Export.ExportProfile.new()
 
 
 func _init(_frames: Array[Frame] = [], _name := tr("untitled"), _size := Vector2i(64, 64)) -> void:
@@ -162,9 +162,9 @@ func _init(_frames: Array[Frame] = [], _name := tr("untitled"), _size := Vector2
 	Global.canvas.add_child(diagonal_x_minus_y_symmetry_axis)
 
 	if OS.get_name() == "Web":
-		export_directory_path = "user://"
+		export_profile.directory_path = "user://"
 	else:
-		export_directory_path = Global.config_cache.get_value(
+		export_profile.directory_path = Global.config_cache.get_value(
 			"data", "current_dir", OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP)
 		)
 	initialize_attribution_data()
@@ -191,7 +191,7 @@ func commit_undo() -> void:
 	if not can_undo:
 		return
 	if Global.canvas.selection.transformation_handles.is_transforming():
-		Global.canvas.selection.transform_content_cancel()
+		Global.transform_content_canceled.emit(self)
 	else:
 		undo_redo.undo()
 
@@ -211,6 +211,7 @@ func new_empty_frame() -> Frame:
 		var cel := l.new_empty_cel()
 		if cel is PixelCel and bottom_layer and fill_color.a > 0:
 			cel.image.fill(fill_color)
+			cel.update_texture()
 		frame.cels.append(cel)
 		bottom_layer = false
 	return frame
@@ -323,6 +324,7 @@ func serialize() -> Dictionary:
 		"tile_mode_y_basis_x": tiles.y_basis.x,
 		"tile_mode_y_basis_y": tiles.y_basis.y,
 		"layers": layer_data,
+		"next_keyframe_id": next_keyframe_id,
 		"tags": tag_data,
 		"guides": guide_data,
 		"symmetry_points": [x_symmetry_point, y_symmetry_point],
@@ -335,9 +337,6 @@ func serialize() -> Dictionary:
 		"reference_images": reference_image_data,
 		"tilesets": tileset_data,
 		"vanishing_points": vanishing_points,
-		"export_directory_path": export_directory_path,
-		"export_file_name": file_name,
-		"export_file_format": file_format,
 		"fps": fps,
 		"license": license,
 		"user_data": user_data,
@@ -345,7 +344,8 @@ func serialize() -> Dictionary:
 		"author_real_name": author_real_name,
 		"author_contact": author_contact,
 		"author_company": author_company,
-		"metadata": metadata
+		"metadata": metadata,
+		"export_profile": export_profile.serialize()
 	}
 
 	serialized.emit(project_data)
@@ -358,9 +358,7 @@ func deserialize(dict: Dictionary, zip_reader: ZIPReader = null, file: FileAcces
 		"pxo_version", ProjectSettings.get_setting("application/config/Pxo_Version")
 	)
 	if dict.has("size_x") and dict.has("size_y"):
-		size.x = dict.size_x
-		size.y = dict.size_y
-		tiles.tile_size = size
+		size = Vector2i(dict.size_x, dict.size_y)
 		selection_map.crop(size.x, size.y)
 	color_mode = dict.get("color_mode", color_mode)
 	if pxo_version <= 5:
@@ -546,15 +544,22 @@ func deserialize(dict: Dictionary, zip_reader: ZIPReader = null, file: FileAcces
 		x_symmetry_point = dict.symmetry_points[0]
 		y_symmetry_point = dict.symmetry_points[1]
 		for point in x_symmetry_axis.points.size():
-			x_symmetry_axis.points[point].y = floorf(y_symmetry_point / 2 + 1)
+			var new_pos := x_symmetry_axis.points[point]
+			new_pos.y = floorf(y_symmetry_point / 2 + 1)
+			x_symmetry_axis.set_point_position(point, new_pos)
 		for point in y_symmetry_axis.points.size():
-			y_symmetry_axis.points[point].x = floorf(x_symmetry_point / 2 + 1)
-	export_directory_path = dict.get("export_directory_path", export_directory_path)
-	if not DirAccess.dir_exists_absolute(export_directory_path):
-		export_directory_path = ""
-	file_name = dict.get("export_file_name", file_name)
-	file_format = dict.get("export_file_format", file_name)
-	fps = dict.get("fps", file_name)
+			var new_pos := y_symmetry_axis.points[point]
+			new_pos.x = floorf(x_symmetry_point / 2 + 1)
+			y_symmetry_axis.set_point_position(point, new_pos)
+	next_keyframe_id = dict.get("next_keyframe_id", next_keyframe_id)
+	var exp_settings = dict.get("export_profile", {})
+	if typeof(exp_settings) == TYPE_DICTIONARY:
+		export_profile.deserialize(exp_settings)
+	if not DirAccess.dir_exists_absolute(export_profile.directory_path):
+		export_profile.directory_path = ""
+	if export_profile.file_name.is_empty() or export_profile.file_name == "untitled":
+		export_profile.file_name = name
+	fps = dict.get("fps", fps)
 	license = dict.get("license", license)
 	author_display_name = dict.get("author_display_name", "")
 	author_real_name = dict.get("author_real_name", "")
@@ -638,7 +643,7 @@ func change_cel(new_frame: int, new_layer := -1) -> void:
 		new_frame = current_frame
 	if new_layer < 0:
 		new_layer = current_layer
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 
 	if selected_cels.is_empty():
 		selected_cels.append([new_frame, new_layer])
@@ -807,7 +812,7 @@ func _z_index_sort(a: int, b: int, frame_index: int) -> bool:
 
 # indices should be in ascending order
 func add_frames(new_frames: Array, indices: PackedInt32Array) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	for i in new_frames.size():
 		# For each linked cel in the frame, update its layer's cel_link_sets
@@ -824,7 +829,8 @@ func add_frames(new_frames: Array, indices: PackedInt32Array) -> void:
 
 
 func remove_frames(indices: PackedInt32Array) -> void:  # indices should be in ascending order
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
+	indices.sort()
 	selected_cels.clear()
 	for i in indices.size():
 		# With each removed index, future indices need to be lowered, so subtract by i
@@ -844,7 +850,7 @@ func remove_frames(indices: PackedInt32Array) -> void:  # indices should be in a
 
 # from_indices and to_indicies should be in ascending order
 func move_frames(from_indices: PackedInt32Array, to_indices: PackedInt32Array) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	var removed_frames := []
 	for i in from_indices.size():
@@ -858,7 +864,7 @@ func move_frames(from_indices: PackedInt32Array, to_indices: PackedInt32Array) -
 
 
 func swap_frame(a_index: int, b_index: int) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	var temp := frames[a_index]
 	frames[a_index] = frames[b_index]
@@ -871,7 +877,7 @@ func swap_frame(a_index: int, b_index: int) -> void:
 
 
 func reverse_frames(frame_indices: PackedInt32Array) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	@warning_ignore("integer_division")
 	for i in frame_indices.size() / 2:
 		var index := frame_indices[i]
@@ -889,7 +895,7 @@ func reverse_frames(frame_indices: PackedInt32Array) -> void:
 
 ## [param cels] is 2d Array of [BaseCel]s
 func add_layers(new_layers: Array, indices: PackedInt32Array, cels: Array) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	for i in indices.size():
 		layers.insert(indices[i], new_layers[i])
@@ -901,7 +907,7 @@ func add_layers(new_layers: Array, indices: PackedInt32Array, cels: Array) -> vo
 
 
 func remove_layers(indices: PackedInt32Array) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	for i in indices.size():
 		# With each removed index, future indices need to be lowered, so subtract by i
@@ -918,7 +924,7 @@ func remove_layers(indices: PackedInt32Array) -> void:
 func move_layers(
 	from_indices: PackedInt32Array, to_indices: PackedInt32Array, to_parents: Array
 ) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	var removed_layers := []
 	var removed_cels := []  # 2D array of cels (an array for each layer removed)
@@ -945,7 +951,7 @@ func move_layers(
 # "a" and "b" should both contain "from", "to", and "to_parents" arrays.
 # (Using dictionaries because there seems to be a limit of 5 arguments for do/undo method calls)
 func swap_layers(a: Dictionary, b: Dictionary) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	var a_layers := []
 	var b_layers := []
@@ -989,7 +995,7 @@ func swap_layers(a: Dictionary, b: Dictionary) -> void:
 func move_cels_same_layer(
 	from_indices: PackedInt32Array, to_indices: PackedInt32Array, layer: int
 ) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	var cels: Array[BaseCel] = []
 	for frame in frames:
@@ -1015,7 +1021,7 @@ func move_cels_same_layer(
 
 
 func swap_cel(a_frame: int, a_layer: int, b_frame: int, b_layer: int) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(self)
 	selected_cels.clear()
 	var temp := frames[a_frame].cels[a_layer]
 	frames[a_frame].cels[a_layer] = frames[b_frame].cels[b_layer]

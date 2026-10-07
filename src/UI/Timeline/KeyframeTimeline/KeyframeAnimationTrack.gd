@@ -7,7 +7,7 @@ enum TrackTypes { LAYER_EFFECT }
 
 var timeline: KeyframeTimeline
 var type := TrackTypes.LAYER_EFFECT
-var effect: LayerEffect
+var animatable_object: AnimatableObject
 var param_name: String
 var is_property := false
 var popup_menu := PopupMenu.new()
@@ -45,15 +45,18 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
+	if animatable_object != null:
+		var dash_color := Color(line_color.r, line_color.g, line_color.b, line_color.a * 0.5)
+		draw_dashed_line(Vector2(0, size.y / 2.0), Vector2(size.x, size.y / 2.0), dash_color)
 	draw_line(Vector2(0, size.y), Vector2(size.x, size.y), line_color)
 
 
 func _on_popup_menu_id_pressed(id: int) -> void:
 	if id == 0:
 		if (
-			effect.animated_params.has(param_name)
-			and effect.animated_params[param_name].has(keyframe_at)
+			animatable_object.animated_params.has(param_name)
+			and animatable_object.animated_params[param_name].has(keyframe_at)
 		):
 			return
 		if type == TrackTypes.LAYER_EFFECT:
-			timeline.add_effect_keyframe(effect, keyframe_at, param_name)
+			timeline.add_effect_keyframe(animatable_object, keyframe_at, param_name)

@@ -62,7 +62,7 @@ var global_layer_expand := true
 @onready var move_down_layer := %MoveDownLayer as Button
 @onready var merge_down_layer := %MergeDownLayer as Button
 @onready var layer_fx := %LayerFX as Button
-@onready var effects_timeline_button := %EffectsTimelineButton as Button
+@onready var keyframe_timeline_button := %KeyframeTimelineButton as Button
 @onready var blend_modes_button := %BlendModes as OptionButton
 @onready var opacity_slider := %OpacitySlider as ValueSlider
 @onready var frame_scroll_container := %FrameScrollContainer as Control
@@ -207,21 +207,21 @@ func _draw_highlight_cels(cel_coords: Array, offset: Vector2i) -> void:
 func _input(event: InputEvent) -> void:
 	var project := Global.current_project
 	if event.is_action_pressed(&"go_to_previous_layer"):
-		Global.canvas.selection.transform_content_confirm()
+		Global.transform_content_confirmed.emit()
 		project.selected_cels.clear()
 		if project.current_layer > 0:
 			project.change_cel(-1, project.current_layer - 1)
 		else:
 			project.change_cel(-1, project.layers.size() - 1)
 	elif event.is_action_pressed(&"go_to_next_layer"):
-		Global.canvas.selection.transform_content_confirm()
+		Global.transform_content_confirmed.emit()
 		project.selected_cels.clear()
 		if project.current_layer < project.layers.size() - 1:
 			project.change_cel(-1, project.current_layer + 1)
 		else:
 			project.change_cel(-1, 0)
 	elif event.is_action_pressed(&"go_to_next_frame_with_same_tag"):
-		Global.canvas.selection.transform_content_confirm()
+		Global.transform_content_confirmed.emit()
 		project.selected_cels.clear()
 		var from := 0
 		var to := project.frames.size() - 1
@@ -234,7 +234,7 @@ func _input(event: InputEvent) -> void:
 		else:
 			project.change_cel(from, -1)
 	elif event.is_action_pressed(&"go_to_previous_frame_with_same_tag"):
-		Global.canvas.selection.transform_content_confirm()
+		Global.transform_content_confirmed.emit()
 		project.selected_cels.clear()
 		var from := 0
 		var to := project.frames.size() - 1
@@ -417,7 +417,7 @@ func add_frame() -> void:
 	var project := Global.current_project
 	var frame_add_index := project.current_frame + 1
 	project.undo_redo.create_action("Add Frame")
-	undo_redo_add_frame(frame_add_index)
+	undo_redo_add_frames([frame_add_index])
 	project.undo_redo.add_do_method(project.change_cel.bind(project.current_frame + 1))
 	project.undo_redo.add_undo_method(project.change_cel.bind(project.current_frame))
 	project.undo_redo.add_do_method(Global.undo_or_redo.bind(false))
@@ -432,40 +432,46 @@ func add_frame() -> void:
 ## This method adds a new frame assuming that an undo action is already created, hence it can be
 ## reused in multiple undo actions like adding frame, cloning cel etc. Returns the new frame for
 ## further adjustment outside of this method.
-func undo_redo_add_frame(frame_add_index: int) -> Frame:
+func undo_redo_add_frames(frame_add_indices: PackedInt32Array) -> Dictionary[int, Frame]:
 	var project := Global.current_project
-	var frame := project.new_empty_frame()
-	for l in range(project.layers.size()):
-		if project.layers[l].new_cels_linked:  # If the link button is pressed
-			var prev_cel := project.frames[project.current_frame].cels[l]
-			if prev_cel.link_set == null:
-				prev_cel.link_set = {}
-				project.undo_redo.add_do_method(
-					project.layers[l].link_cel.bind(prev_cel, prev_cel.link_set)
-				)
-				project.undo_redo.add_undo_method(project.layers[l].link_cel.bind(prev_cel, null))
-			frame.cels[l].set_content(prev_cel.get_content(), prev_cel.image_texture)
-			frame.cels[l].link_set = prev_cel.link_set
-
-	# Code to PUSH AHEAD tags starting after the frame
+	var new_frames: Dictionary[int, Frame] = {}
 	var new_animation_tags := project.animation_tags.duplicate()
-	# Loop through the tags to create new classes for them, so that they won't be the same
-	# as Global.current_project.animation_tags's classes. Needed for undo/redo to work properly.
-	for i in new_animation_tags.size():
-		new_animation_tags[i] = new_animation_tags[i].duplicate()
-	# Loop through the tags to see if the frame is in one
-	for tag in new_animation_tags:
-		if frame_add_index >= tag.from && frame_add_index <= tag.to:
-			tag.to += 1
-		elif (frame_add_index) < tag.from:
-			tag.from += 1
-			tag.to += 1
+	frame_add_indices.sort()
+	for frame_add_index in frame_add_indices:
+		var frame := project.new_empty_frame()
+		new_frames[frame_add_index] = frame
+		for l in range(project.layers.size()):
+			if project.layers[l].new_cels_linked:  # If the link button is pressed
+				var prev_cel := project.frames[project.current_frame].cels[l]
+				if prev_cel.link_set == null:
+					prev_cel.link_set = {}
+					project.undo_redo.add_do_method(
+						project.layers[l].link_cel.bind(prev_cel, prev_cel.link_set)
+					)
+					project.undo_redo.add_undo_method(
+						project.layers[l].link_cel.bind(prev_cel, null)
+					)
+				frame.cels[l].set_content(prev_cel.get_content(), prev_cel.image_texture)
+				frame.cels[l].link_set = prev_cel.link_set
 
-	project.undo_redo.add_do_method(project.add_frames.bind([frame], [frame_add_index]))
-	project.undo_redo.add_undo_method(project.remove_frames.bind([frame_add_index]))
+		# Code to PUSH AHEAD tags starting after the frame
+		# Loop through the tags to create new classes for them, so that they won't be the same
+		# as Global.current_project.animation_tags's classes. Needed for undo/redo to work properly.
+		for i in new_animation_tags.size():
+			new_animation_tags[i] = new_animation_tags[i].duplicate()
+		# Loop through the tags to see if the frame is in one
+		for tag in new_animation_tags:
+			if frame_add_index >= tag.from && frame_add_index <= tag.to:
+				tag.to += 1
+			elif (frame_add_index) < tag.from:
+				tag.from += 1
+				tag.to += 1
+	# NOTE: It is assumed that new_frames.values() and new_frames.keys() are in correct order.
+	project.undo_redo.add_do_method(project.add_frames.bind(new_frames.values(), new_frames.keys()))
+	project.undo_redo.add_undo_method(project.remove_frames.bind(new_frames.keys()))
 	project.undo_redo.add_do_property(project, "animation_tags", new_animation_tags)
 	project.undo_redo.add_undo_property(project, "animation_tags", project.animation_tags)
-	return frame
+	return new_frames
 
 
 func _on_DeleteFrame_pressed() -> void:
@@ -546,7 +552,7 @@ func _on_CopyFrame_pressed() -> void:
 func copy_frames(
 	indices := [], destination := -1, select_all_cels := true, tag_name_from: AnimationTag = null
 ) -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
 
 	if indices.size() == 0:
@@ -805,7 +811,7 @@ func _on_AnimationTimer_timeout() -> void:
 		animation_timer.stop()
 		return
 
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
 	var fps := project.fps
 	# Recalculate start and end points if user deliberately changed the frame.
@@ -919,7 +925,7 @@ func play_animation(play: bool, forward_dir: bool) -> void:
 
 
 func _on_NextFrame_pressed() -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
 	project.selected_cels.clear()
 	if project.current_frame < project.frames.size() - 1:
@@ -929,7 +935,7 @@ func _on_NextFrame_pressed() -> void:
 
 
 func _on_PreviousFrame_pressed() -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
 	project.selected_cels.clear()
 	if project.current_frame > 0:
@@ -939,13 +945,13 @@ func _on_PreviousFrame_pressed() -> void:
 
 
 func _on_LastFrame_pressed() -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	Global.current_project.selected_cels.clear()
 	Global.current_project.change_cel(Global.current_project.frames.size() - 1, -1)
 
 
 func _on_FirstFrame_pressed() -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	Global.current_project.selected_cels.clear()
 	Global.current_project.change_cel(0, -1)
 
@@ -1023,16 +1029,17 @@ func add_layer(layer: BaseLayer, project: Project) -> void:
 
 	var new_layer_idx := project.current_layer + 1
 	if current_layer is GroupLayer:
-		new_layer_idx = project.current_layer
-		if !current_layer.expanded:
-			current_layer.expanded = true
-			for layer_button: LayerButton in layer_vbox.get_children():
-				layer_button.update_buttons()
-				var expanded := project.layers[layer_button.layer_index].is_expanded_in_hierarchy()
-				layer_button.visible = expanded
-				cel_vbox.get_child(layer_button.get_index()).visible = expanded
-		# Make layer child of group.
-		layer.parent = project.layers[project.current_layer]
+		if current_layer.expanded:
+			new_layer_idx = project.current_layer
+			# Make layer child of group.
+			layer.parent = project.layers[project.current_layer]
+		else:
+			if project.layers.size() > new_layer_idx:
+				var above_layer := project.layers[new_layer_idx]
+				if above_layer is GroupLayer:
+					layer.parent = above_layer
+				else:
+					layer.parent = above_layer.parent
 	else:
 		# Set the parent of layer to be the same as the layer below it.
 		layer.parent = project.layers[project.current_layer].parent
@@ -1048,7 +1055,7 @@ func add_layer(layer: BaseLayer, project: Project) -> void:
 
 
 func _on_CloneLayer_pressed() -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
 	var source_layers := project.layers[project.current_layer].get_children(true)
 	source_layers.append(project.layers[project.current_layer])
@@ -1387,10 +1394,18 @@ func flatten_layers(indices: PackedInt32Array, only_visible := false) -> void:
 	project.undo_redo.commit_action()
 
 
+func update_layer_expanded_status() -> void:
+	var project := Global.current_project
+	for layer_button: LayerButton in layer_vbox.get_children():
+		layer_button.update_buttons()
+		var expanded := project.layers[layer_button.layer_index].is_expanded_in_hierarchy()
+		layer_button.visible = expanded
+		cel_vbox.get_child(layer_button.get_index()).visible = expanded
+
+
 func _on_opacity_slider_value_changed(value: float) -> void:
 	var new_opacity := value / 100.0
-
-	var project: Project = Global.current_project
+	var project := Global.current_project
 	if Global.layer_opacity_undoable:
 		project.undo_redo.create_action("Change Layer Opacity", UndoRedo.MergeMode.MERGE_ENDS)
 		for idx_pair in Global.current_project.selected_cels:
@@ -1424,9 +1439,12 @@ func _on_timeline_settings_visibility_changed() -> void:
 
 func _on_project_about_to_switch() -> void:
 	var project := Global.current_project
-	project.layers_updated.disconnect(_update_layer_ui)
-	project.frames_updated.disconnect(_update_frame_ui)
-	project.tags_changed.disconnect(_on_animation_tags_changed)
+	if project.layers_updated.is_connected(_update_layer_ui):
+		project.layers_updated.disconnect(_update_layer_ui)
+	if project.frames_updated.is_connected(_update_frame_ui):
+		project.frames_updated.disconnect(_update_frame_ui)
+	if project.tags_changed.is_connected(_on_animation_tags_changed):
+		project.tags_changed.disconnect(_on_animation_tags_changed)
 
 
 func _on_project_switched() -> void:
@@ -1567,6 +1585,7 @@ func _toggle_layer_buttons() -> void:
 	var layer := project.layers[project.current_layer]
 	var child_count := layer.get_child_count(true)
 
+	opacity_slider.editable = not layer.has_keyframes("opacity")
 	Global.disable_button(
 		remove_layer, layer.is_locked_in_hierarchy() or project.layers.size() == child_count + 1
 	)
@@ -1671,30 +1690,30 @@ func project_frame_removed(frame: int) -> void:
 		cel_hbox.get_child(frame).free()
 
 
-func project_layer_added(layer: int) -> void:
+func project_layer_added(layer_index: int) -> void:
 	var project := Global.current_project
-
-	var layer_button := project.layers[layer].instantiate_layer_button() as LayerButton
-	layer_button.layer_index = layer
-	if project.layers[layer].name == "":
-		project.layers[layer].set_name_to_default(project.layers.size())
+	var layer := project.layers[layer_index]
+	var layer_button := layer.instantiate_layer_button() as LayerButton
+	layer_button.layer_index = layer_index
+	if layer.name == "":
+		layer.set_name_to_default(project.layers.size())
 
 	var cel_hbox := HBoxContainer.new()
 	cel_hbox.add_theme_constant_override("separation", 0)
 	for f in project.frames.size():
-		var cel_button := project.frames[f].cels[layer].instantiate_cel_button()
+		var cel_button := project.frames[f].cels[layer_index].instantiate_cel_button()
 		cel_button.frame = f
-		cel_button.layer = layer
+		cel_button.layer = layer_index
 		cel_hbox.add_child(cel_button)
-
-	layer_button.visible = project.layers[layer].is_expanded_in_hierarchy()
-	cel_hbox.visible = layer_button.visible
 
 	layer_vbox.add_child(layer_button)
 	var count := layer_vbox.get_child_count()
-	layer_vbox.move_child(layer_button, count - 1 - layer)
+	layer_vbox.move_child(layer_button, count - 1 - layer_index)
 	cel_vbox.add_child(cel_hbox)
-	cel_vbox.move_child(cel_hbox, count - 1 - layer)
+	cel_vbox.move_child(cel_hbox, count - 1 - layer_index)
+	for ancestor in layer.get_ancestors():
+		ancestor.expanded = true
+	update_layer_expanded_status.call_deferred()
 	update_global_layer_buttons()
 	await get_tree().process_frame
 	if not is_instance_valid(layer_button):
@@ -1702,11 +1721,11 @@ func project_layer_added(layer: int) -> void:
 	timeline_scroll.ensure_control_visible(layer_button)
 
 
-func project_layer_removed(layer: int) -> void:
+func project_layer_removed(layer_index: int) -> void:
 	var count := layer_vbox.get_child_count()
-	var layer_button := layer_vbox.get_child(count - 1 - layer)
+	var layer_button := layer_vbox.get_child(count - 1 - layer_index)
 	layer_button.free()
-	var cel_hbox := cel_vbox.get_child(count - 1 - layer)
+	var cel_hbox := cel_vbox.get_child(count - 1 - layer_index)
 	cel_hbox.free()
 	update_global_layer_buttons()
 
@@ -1856,14 +1875,14 @@ func _on_layer_frame_h_split_dragged(offset: int) -> void:
 		layer_frame_h_split.split_offset = offset
 
 
-func _on_effects_timeline_button_pressed() -> void:
+func _on_keyframe_timeline_button_pressed() -> void:
 	var keyframe_timeline_enabled := not keyframe_timeline.visible
 	keyframe_timeline.visible = keyframe_timeline_enabled
 	tag_scroll_container.visible = not keyframe_timeline_enabled
 	layer_frame_header_h_split.get_parent().visible = not keyframe_timeline_enabled
 	frame_scroll_container.get_parent().visible = not keyframe_timeline_enabled
-	var texture_button: TextureRect = effects_timeline_button.get_child(0)
+	var texture_button: TextureRect = keyframe_timeline_button.get_child(0)
 	if keyframe_timeline_enabled:
-		Global.change_button_texturerect(texture_button, "cel_based_timeline_button.png")
-	else:
 		Global.change_button_texturerect(texture_button, "keyframe_based_timeline_button.png")
+	else:
+		Global.change_button_texturerect(texture_button, "cel_based_timeline_button.png")

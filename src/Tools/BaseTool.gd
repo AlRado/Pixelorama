@@ -83,6 +83,40 @@ func draw_end(_pos: Vector2i) -> void:
 	project.can_undo = true
 
 
+## Manages conversion of global palettes into local if a drawable tool is used.
+func manage_undo_redo_palettes() -> void:
+	var palette_in_focus := Palettes.current_palette
+	if not is_instance_valid(palette_in_focus):
+		return
+	var palette_has_color := Palettes.current_palette.has_theme_color(tool_slot.color)
+	if not palette_in_focus.is_project_palette and Global.global_palettes_readonly:
+		# Make a project copy of the palette if it has (or about to have) the color
+		# and is still global (in readonly mode).
+		if palette_has_color or Palettes.auto_add_colors:
+			palette_in_focus = palette_in_focus.duplicate()
+			Palettes.undo_redo_add_palette(palette_in_focus, false)
+	if Palettes.auto_add_colors and not palette_has_color:
+		# Get an estimate of where the color will end up (used for undo).
+		if not palette_in_focus.is_project_palette:  # Read-only mode disabled.
+			palette_in_focus.add_color(tool_slot.color, 0)
+			Global.palette_panel_updated.emit()
+		else:
+			var index := 0
+			var color_max: int = palette_in_focus.colors_max
+			# If palette is full, automatically increase the palette height.
+			if palette_in_focus.is_full():
+				color_max = palette_in_focus.width * (palette_in_focus.height + 1)
+			for i in range(0, color_max):
+				if not palette_in_focus.colors.has(i):
+					index = i
+					break
+			var undo_redo := Global.current_project.undo_redo
+			undo_redo.add_do_method(palette_in_focus.add_color.bind(tool_slot.color, 0))
+			undo_redo.add_undo_method(palette_in_focus.remove_color.bind(index))
+			undo_redo.add_do_method(func(): Global.palette_panel_updated.emit())
+			undo_redo.add_undo_method(func(): Global.palette_panel_updated.emit())
+
+
 func cancel_tool() -> void:
 	is_moving = false
 	_draw_cache = []
@@ -379,10 +413,14 @@ func _get_draw_image() -> ImageExtended:
 	return Global.current_project.get_current_cel().get_image()
 
 
-func _get_selected_draw_cels() -> Array[BaseCel]:
+func _get_selected_draw_cels(include_all_layers := true) -> Array[BaseCel]:
 	var cels: Array[BaseCel]
 	var project := Global.current_project
 	for cel_index in project.selected_cels:
+		if not include_all_layers:
+			var layer := project.layers[cel_index[1]]
+			if not layer.can_layer_get_drawn():
+				continue
 		var cel: BaseCel = project.frames[cel_index[0]].cels[cel_index[1]]
 		if not cel is PixelCel:
 			continue

@@ -34,8 +34,10 @@ func _input(event: InputEvent) -> void:
 	if _drawing:
 		if event.is_action_pressed("shape_displace"):
 			_displace_origin = true
+			get_viewport().set_input_as_handled()
 		elif event.is_action_released("shape_displace"):
 			_displace_origin = false
+			get_viewport().set_input_as_handled()
 	else:
 		super(event)
 
@@ -44,7 +46,7 @@ func draw_start(pos: Vector2i) -> void:
 	pos = snap_position(pos)
 	super.draw_start(pos)
 
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit()
 	update_mask()
 
 	if Global.mirror_view:

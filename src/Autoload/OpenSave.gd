@@ -144,6 +144,7 @@ func handle_loading_file(file: String, force_import_dialog_on_images := false) -
 			Global.popup_error(tr("Can't load file '%s'.") % [file_name])
 			return
 		handle_loading_image(file, image, force_import_dialog_on_images)
+	persist_file_read_write_permissions(file)
 
 
 func add_import_option(import_name: StringName, import_scene: PackedScene) -> int:
@@ -282,7 +283,6 @@ func handle_loading_video(file: String) -> bool:
 		open_image_as_new_frame(temp_image, 0, new_project, false)
 	Global.projects.append(new_project)
 	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 	var output_audio_file := temp_path_real.path_join("audio.mp3")
 	# ffmpeg -y -i input_file -vn audio.mp3
 	var ffmpeg_execute_audio: PackedStringArray = ["-y", "-i", file, "-vn", output_audio_file]
@@ -342,6 +342,19 @@ func open_pxo_file(path: String, is_backup := false, replace_empty := true) -> v
 				new_project.brushes.append(image)
 				Brushes.add_project_brush(image)
 				brush_index += 1
+		if result.has("reference_images"):
+			var ref_index := 0
+			for ref_image_data: Dictionary in result.reference_images:
+				var width: int = ref_image_data.get("width", 64)
+				var height: int = ref_image_data.get("height", 64)
+				var format: int = ref_image_data.get("image_format", Image.FORMAT_RGBA8)
+				var reference_image := new_project.reference_images[ref_index]
+				var image_data := zip_reader.read_file(
+					"image_data/reference_images/reference_%s" % ref_index
+				)
+				var image := Image.create_from_data(width, height, false, format, image_data)
+				reference_image.create_from_image(image, false)
+				ref_index += 1
 		if result.has("tile_mask") and result.has("has_mask"):
 			if result.has_mask:
 				var t_width = result.tile_mask.size_x
@@ -372,8 +385,8 @@ func open_pxo_file(path: String, is_backup := false, replace_empty := true) -> v
 				if cel is CelTileMap:
 					cel.find_times_used_of_tiles()
 		zip_reader.close()
-	if new_project.export_directory_path.is_empty():
-		new_project.export_directory_path = path.get_base_dir()
+	if new_project.export_profile.directory_path.is_empty():
+		new_project.export_profile.directory_path = path.get_base_dir()
 
 	if empty_project:
 		Global.project_switched.emit()
@@ -382,7 +395,6 @@ func open_pxo_file(path: String, is_backup := false, replace_empty := true) -> v
 	else:
 		Global.projects.append(new_project)
 		Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 
 	if is_backup:
 		new_project.backup_path = path
@@ -394,8 +406,6 @@ func open_pxo_file(path: String, is_backup := false, replace_empty := true) -> v
 		Global.config_cache.set_value("data", "current_dir", path.get_base_dir())
 		Global.config_cache.set_value("data", "last_project_path", path)
 		Global.config_cache.save(Global.CONFIG_PATH)
-		if new_project.file_name.is_empty():
-			new_project.file_name = path.uri_decode().get_file().trim_suffix(".pxo")
 		new_project.was_exported = false
 		Global.top_menu_container.file_menu.set_item_text(
 			Global.FileMenu.SAVE, tr("Save") + " %s" % path.uri_decode().get_file()
@@ -559,6 +569,11 @@ func save_pxo_file(
 		zip_packer.write_file(brush.get_data())
 		zip_packer.close_file()
 		brush_index += 1
+	for i in project.reference_images.size():
+		var reference_image := project.reference_images[i]
+		zip_packer.start_file("image_data/reference_images/reference_%s" % i)
+		zip_packer.write_file(reference_image.texture.get_image().get_data())
+		zip_packer.close_file()
 	if project.tiles.has_mask:
 		zip_packer.start_file("image_data/tile_map")
 		zip_packer.write_file(project.tiles.tile_mask.get_data())
@@ -632,16 +647,15 @@ func save_pxo_file(
 		Global.config_cache.set_value("data", "current_dir", path.get_base_dir())
 		Global.config_cache.set_value("data", "last_project_path", path)
 		Global.config_cache.save(Global.CONFIG_PATH)
-		if project.file_name.is_empty():
-			project.file_name = path.uri_decode().get_file().trim_suffix(".pxo")
-		if project.export_directory_path.is_empty():
-			project.export_directory_path = path.get_base_dir()
+		if project.export_profile.directory_path.is_empty():
+			project.export_profile.directory_path = path.get_base_dir()
 		Global.top_menu_container.file_menu.set_item_text(
 			Global.FileMenu.SAVE, tr("Save") + " %s" % path.uri_decode().get_file()
 		)
 		project_saved.emit()
 		SteamManager.set_achievement("ACH_SAVE")
 		save_project_to_recent_list(path)
+	persist_file_read_write_permissions(path)
 	return true
 
 
@@ -983,16 +997,6 @@ func open_image_as_new_layer(image: Image, file_name: String, frame_index := 0) 
 	project.undo_redo.commit_action()
 
 
-func import_reference_image_from_path(path: String) -> void:
-	var project := Global.current_project
-	var ri := ReferenceImage.new()
-	ri.project = project
-	ri.deserialize({"image_path": path})
-	Global.canvas.reference_image_container.add_child(ri)
-	reference_image_imported.emit()
-
-
-## Useful for Web
 func import_reference_image_from_image(image: Image) -> void:
 	var project := Global.current_project
 	var ri := ReferenceImage.new()
@@ -1073,14 +1077,13 @@ func set_new_imported_tab(project: Project, path: String) -> void:
 	)
 	if project.has_changed:
 		get_window().title = get_window().title + "(*)"
-	project.export_directory_path = path.get_base_dir()
-	project.file_name = file_name.get_basename()
+	project.export_profile.directory_path = path.get_base_dir()
+	project.export_profile.file_name = file_name.get_basename()
 	project.was_exported = true
 	if path.get_extension().to_lower() == "png":
 		project.export_overwrite = true
 
 	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 
 	if prev_project_empty:
 		Global.tabs.delete_tab(prev_project_pos)
@@ -1156,10 +1159,9 @@ func open_gif_file(path: String) -> bool:
 		var frame := Frame.new([cel], delay)
 		new_project.frames.append(frame)
 	new_project.save_path = path.get_basename() + ".pxo"
-	new_project.file_name = new_project.name
+	new_project.export_profile.file_name = new_project.name
 	Global.projects.append(new_project)
 	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 	return true
 
 
@@ -1272,10 +1274,9 @@ func open_ora_file(path: String) -> void:
 	new_project.selected_cels.clear()
 	new_project.change_cel(0, new_project.layers.find(selected_layer))
 	new_project.save_path = path.get_basename() + ".pxo"
-	new_project.file_name = new_project.name
+	new_project.export_profile.file_name = new_project.name
 	Global.projects.append(new_project)
 	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 
 
 func open_piskel_file(path: String) -> void:
@@ -1289,7 +1290,7 @@ func open_piskel_file(path: String) -> void:
 	new_project.size = Vector2i(piskel.width, piskel.height)
 	new_project.fps = piskel.fps
 	new_project.save_path = path.get_basename() + ".pxo"
-	new_project.file_name = new_project.name
+	new_project.export_profile.file_name = new_project.name
 	var n_of_frames := 0
 	for i in piskel.layers.size():
 		var piskel_layer_str = piskel.layers[i]
@@ -1321,7 +1322,6 @@ func open_piskel_file(path: String) -> void:
 	new_project.order_layers()
 	Global.projects.append(new_project)
 	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 
 
 func enforce_backed_sessions_limit() -> void:
@@ -1352,7 +1352,7 @@ func update_autosave() -> void:
 func _on_Autosave_timeout() -> void:
 	for i in Global.projects.size():
 		var project := Global.projects[i]
-		var p_name: String = project.file_name
+		var p_name: String = project.export_profile.file_name
 		if project.backup_path.is_empty():
 			project.backup_path = (current_session_backup.path_join(
 				"(" + p_name + " backup)-" + str(Time.get_unix_time_from_system()) + "-%s" % i
@@ -1411,3 +1411,10 @@ func execute_custom_open_callback(extension: String, path: String) -> void:
 # Check if there is a custom open callback registered for a specific file extension.
 func has_custom_open_callbacks(extension: String) -> bool:
 	return custom_open_callbacks.has(extension)
+
+
+func persist_file_read_write_permissions(path: String) -> void:
+	if Engine.has_singleton(&"AndroidRuntime"):
+		var android_runtime: Object = Engine.get_singleton(&"AndroidRuntime")
+		if is_instance_valid(android_runtime):
+			android_runtime.updatePersistableUriPermission(path, true)

@@ -17,12 +17,22 @@ signal project_switched  ## Emitted whenever you switch to some other project ta
 signal cel_switched  ## Emitted whenever you select a different cel.
 @warning_ignore("unused_signal")
 signal project_data_changed(project: Project)  ## Emitted when project data is modified.
+## Emitted when we are about to confirm a transformation.
+signal transform_content_confirmed(project: Project, should_emit_signal: bool)
+## Emitted when we are about to cancel a transformation.
+@warning_ignore("unused_signal")
+signal transform_content_canceled(project: Project)
 @warning_ignore("unused_signal")
 signal font_loaded  ## Emitted when a new font has been loaded, or an old one gets unloaded.
 signal collapse_main_menu_changed  ## Emitted when [member collapse_main_menu] changes.
 signal single_tool_mode_changed(mode: bool)  ## Emitted when [member single_tool_mode] changes.
 ## Emitted when [member share_options_between_tools] changes.
 signal share_options_between_tools_changed(mode: bool)
+@warning_ignore("unused_signal")
+signal palette_panel_updated  ## Emitted when the palette needs to be redrawn in the palette panel.
+signal grid_updated  ## Emitted when the grid needs to be redrawn.
+signal pixel_grid_updated  ## Emitted when the pixel grid needs to be redrawn.
+signal selection_properties_updated
 @warning_ignore("unused_signal")
 signal on_cursor_position_text_changed(text: String)
 @warning_ignore("unused_signal")
@@ -55,7 +65,6 @@ enum ViewMenu {
 	CENTER_CANVAS,
 	TILE_MODE,
 	TILE_MODE_OFFSETS,
-	GREYSCALE_VIEW,
 	MIRROR_VIEW,
 	SHOW_GRID,
 	SHOW_PIXEL_GRID,
@@ -64,6 +73,7 @@ enum ViewMenu {
 	SHOW_GUIDES,
 	SHOW_MOUSE_GUIDES,
 	SHOW_REFERENCE_IMAGES,
+	LOCK_GUIDES,
 	DISPLAY_LAYER_EFFECTS,
 	SNAP_TO,
 }
@@ -169,7 +179,7 @@ var current_project_index := 0:
 	set(value):
 		if value >= projects.size():
 			return
-		canvas.selection.transform_content_confirm()
+		transform_content_confirmed.emit()
 		project_about_to_switch.emit()
 		current_project_index = value
 		current_project = projects[value]
@@ -391,16 +401,14 @@ var pixel_grid_show_at_zoom := 1500.0:  # percentage
 		if value == pixel_grid_show_at_zoom:
 			return
 		pixel_grid_show_at_zoom = value
-		if is_instance_valid(canvas.pixel_grid):
-			canvas.pixel_grid.queue_redraw()
+		pixel_grid_updated.emit()
 ## Found in Preferences. The color of pixel grid.
 var pixel_grid_color := Color("21212191"):
 	set(value):
 		if value == pixel_grid_color:
 			return
 		pixel_grid_color = value
-		if is_instance_valid(canvas.pixel_grid):
-			canvas.pixel_grid.queue_redraw()
+		pixel_grid_updated.emit()
 ## Found in Preferences. The color of guides.
 var guide_color := Color.PURPLE:
 	set(value):
@@ -495,37 +503,28 @@ var selection_animated_borders := true:
 		if value == selection_animated_borders:
 			return
 		selection_animated_borders = value
-		if is_instance_valid(canvas.selection):
-			var marching_ants: Sprite2D = canvas.selection.marching_ants_outline
-			marching_ants.material.set_shader_parameter("animated", selection_animated_borders)
+		selection_properties_updated.emit()
 ## Found in Preferences. The first color of the selection borders.
 var selection_border_color_1 := Color.WHITE:
 	set(value):
 		if value == selection_border_color_1:
 			return
 		selection_border_color_1 = value
-		if is_instance_valid(canvas.selection):
-			var marching_ants: Sprite2D = canvas.selection.marching_ants_outline
-			marching_ants.material.set_shader_parameter("first_color", selection_border_color_1)
-			canvas.selection.queue_redraw()
+		selection_properties_updated.emit()
 ## Found in Preferences. The second color of the selection borders.
 var selection_border_color_2 := Color.BLACK:
 	set(value):
 		if value == selection_border_color_2:
 			return
 		selection_border_color_2 = value
-		if is_instance_valid(canvas.selection):
-			var marching_ants: Sprite2D = canvas.selection.marching_ants_outline
-			marching_ants.material.set_shader_parameter("second_color", selection_border_color_2)
-			canvas.selection.queue_redraw()
+		selection_properties_updated.emit()
 ## Found in Preferences. The second color of the selection borders.
 var transformation_preview_alpha := 0.5:
 	set(value):
 		if value == transformation_preview_alpha:
 			return
 		transformation_preview_alpha = value
-		if is_instance_valid(canvas.selection):
-			canvas.selection.queue_redraw()
+		selection_properties_updated.emit()
 
 ## Found in Preferences. If [code]true[/code], Pixelorama pauses when unfocused to save CPU usage.
 var pause_when_unfocused := true
@@ -629,8 +628,6 @@ var cross_cursor := true
 #endregion
 
 #region View menu options
-## If [code]true[/code], the canvas is in greyscale.
-var greyscale_view := false
 ## If [code]true[/code], the content of canvas is flipped.
 var mirror_view := false
 ## If [code]true[/code], the grid is visible.
@@ -642,6 +639,14 @@ var show_rulers := true:
 	set(value):
 		show_rulers = value
 		get_tree().set_group(&"CanvasRulers", "visible", value)
+## If [code]true[/code], the guides are visible.
+var lock_guides := false:
+	set(value):
+		if value == lock_guides:
+			return
+		lock_guides = value
+		if is_instance_valid(top_menu_container):
+			top_menu_container.view_menu.set_item_checked(ViewMenu.LOCK_GUIDES, value)
 ## If [code]true[/code], the guides are visible.
 var show_guides := true
 ## If [code]true[/code], the mouse guides are visible.
@@ -708,8 +713,6 @@ var cel_button_scene: PackedScene = load("res://src/UI/Timeline/CelButton.tscn")
 @onready var top_menu_container: Panel = control.find_child("TopMenuContainer")
 ## The animation timeline. It has the [param AnimationTimeline.gd] script attached.
 @onready var animation_timeline: Panel = control.find_child("Animation Timeline")
-## The palette panel. It has the [param PalettePanel.gd] script attached.
-@onready var palette_panel: PalettePanel = control.find_child("Palettes")
 ## Popup dialog that displays brushes. It has the [param BrushesPopup.gd] script attached.
 @onready var brushes_popup: Popup = control.find_child("BrushesPopup")
 ## Popup dialog that displays patterns. It has the [param PatternsPopup.gd] script attached.
@@ -726,24 +729,21 @@ class Grid:
 			if value == grid_type:
 				return
 			grid_type = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 	## Found in Preferences. The size of the grid.
 	var grid_size := Vector2i(2, 2):
 		set(value):
 			if value == grid_size:
 				return
 			grid_size = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 	## Found in Preferences. The grid offset from top-left corner of the canvas.
 	var grid_offset := Vector2i.ZERO:
 		set(value):
 			if value == grid_offset:
 				return
 			grid_offset = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 	## Found in Preferences. If [code]true[/code], The grid draws over the area extended by
 	## tile-mode as well.
 	var grid_draw_over_tile_mode := false:
@@ -751,32 +751,28 @@ class Grid:
 			if value == grid_draw_over_tile_mode:
 				return
 			grid_draw_over_tile_mode = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 	## Found in Preferences. The color of grid.
 	var grid_color := Color.BLACK:
 		set(value):
 			if value == grid_color:
 				return
 			grid_color = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 	## Found in Preferences. The enables/disables pixelation mode of grid.
 	var is_pixelated := false:
 		set(value):
 			if value == is_pixelated:
 				return
 			is_pixelated = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 	## Found in Preferences. contains special keywords that may not be common among grids.
 	var special_flags := PackedStringArray():
 		set(value):
 			if value == special_flags:
 				return
 			special_flags = value
-			if is_instance_valid(Global.canvas.grid):
-				Global.canvas.grid.queue_redraw()
+			Global.grid_updated.emit()
 
 	func _init(properties := {}) -> void:
 		Global.grids.append(self)
@@ -879,6 +875,15 @@ func is_linux_or_bsd() -> bool:
 	return OS.get_name() in ["Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD"]
 
 
+## Returns [code]true[/code] if the platform's selection modifier is held down.
+## On macOS this is the Command key, because Control+left-click is interpreted by the
+## operating system as a right-click; on every other platform it is the Control key.
+func is_ctrl_or_cmd_pressed() -> bool:
+	if OS.get_name() == "macOS":
+		return Input.is_key_pressed(KEY_META)
+	return Input.is_action_pressed(&"ctrl")
+
+
 ## Print this when Pixelorama launches so it can be stored in the log files.
 ## This info may help us better debug issues certain users may have.
 func get_system_info() -> String:
@@ -939,8 +944,7 @@ func get_system_info() -> String:
 func update_grids(grids_data: Dictionary) -> void:
 	# Remove old grids
 	grids.clear()
-	if is_instance_valid(Global.canvas.grid):
-		Global.canvas.grid.queue_redraw()
+	grid_updated.emit()
 	# ADD new ones
 	for grid_idx in grids_data.size():
 		Grid.new(grids_data[grid_idx])  # gets auto added to grids array
@@ -977,6 +981,7 @@ func _initialize_keychain() -> void:
 		&"offset_image": Keychain.InputAction.new("", "Effects menu", true),
 		&"mirror_image": Keychain.InputAction.new("", "Effects menu", true),
 		&"rotate_image": Keychain.InputAction.new("", "Effects menu", true),
+		&"flat_to_isometric": Keychain.InputAction.new("", "Effects menu", true),
 		&"invert_colors": Keychain.InputAction.new("", "Effects menu", true),
 		&"desaturation": Keychain.InputAction.new("", "Effects menu", true),
 		&"outline": Keychain.InputAction.new("", "Effects menu", true),
@@ -991,7 +996,6 @@ func _initialize_keychain() -> void:
 		&"pixelize": Keychain.InputAction.new("", "Effects menu", true),
 		&"posterize": Keychain.InputAction.new("", "Effects menu", true),
 		&"center_canvas": Keychain.InputAction.new("", "View menu", true),
-		&"grayscale_view": Keychain.InputAction.new("", "View menu", true),
 		&"mirror_view": Keychain.InputAction.new("", "View menu", true),
 		&"show_grid": Keychain.InputAction.new("", "View menu", true),
 		&"show_pixel_grid": Keychain.InputAction.new("", "View menu", true),
@@ -999,6 +1003,7 @@ func _initialize_keychain() -> void:
 		&"show_guides": Keychain.InputAction.new("", "View menu", true),
 		&"show_rulers": Keychain.InputAction.new("", "View menu", true),
 		&"show_reference_images": Keychain.InputAction.new("", "View menu", true),
+		&"lock_guides": Keychain.InputAction.new("", "View menu", true),
 		&"display_layer_effects": Keychain.InputAction.new("", "View menu", true),
 		&"moveable_panels": Keychain.InputAction.new("", "Window menu", true),
 		&"zen_mode": Keychain.InputAction.new("", "Window menu", true),
@@ -1016,6 +1021,7 @@ func _initialize_keychain() -> void:
 		&"about_pixelorama": Keychain.InputAction.new("", "Help menu", true),
 		&"previous_project": Keychain.InputAction.new("", "Canvas"),
 		&"next_project": Keychain.InputAction.new("", "Canvas"),
+		&"close_project": Keychain.InputAction.new("", "Canvas"),
 		&"zoom_in": Keychain.InputAction.new("", "Canvas"),
 		&"zoom_out": Keychain.InputAction.new("", "Canvas"),
 		&"rotate_left": Keychain.InputAction.new("", "Canvas"),
@@ -1255,6 +1261,7 @@ func undo_or_redo(
 			"Move Selection",
 			"Scale",
 			"Center Frames",
+			"Center Cels",
 			"Merge Layer",
 			"Link Cel",
 			"Unlink Cel"
@@ -1279,9 +1286,6 @@ func undo_or_redo(
 					var current_cel := project.frames[i].cels[j]
 					if current_cel is not Cel3D:
 						current_cel.image_texture.set_image(current_cel.get_image())
-			canvas.camera_zoom()
-			canvas.grid.queue_redraw()
-			canvas.pixel_grid.queue_redraw()
 			project.selection_map_changed()
 
 	canvas.queue_redraw()
@@ -1325,7 +1329,7 @@ func disable_button(button: BaseButton, disable: bool) -> void:
 	if button is Button:
 		for c in button.get_children():
 			if c is TextureRect:
-				c.modulate.a = 0.5 if disable else 1.0
+				c.modulate.a = 0.5 if disable else modulate_icon_color.a
 				break
 
 

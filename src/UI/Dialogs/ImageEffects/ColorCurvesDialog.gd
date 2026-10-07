@@ -1,7 +1,9 @@
 extends ImageEffect
 
 enum Channel { RGB, RED, GREEN, BLUE, ALPHA, HUE, SATURATION, VALUE }
-const SHADER := preload("res://src/Shaders/Effects/ColorCurves.gdshader")
+
+var shader_inc := load("res://src/Shaders/Effects/ColorCurves.gdshaderinc")
+var shader: Shader
 
 var curves: Array[Curve]
 @onready var channel_option_button := %ChannelOptionButton as OptionButton
@@ -9,14 +11,14 @@ var curves: Array[Curve]
 
 
 func _ready() -> void:
-	super._ready()
+	shader = ShaderLoader.generate_texture_blit_shader(shader_inc)
+	super()
 	var sm := ShaderMaterial.new()
-	sm.shader = SHADER
+	sm.shader = ShaderLoader.generate_canvas_item_shader(shader_inc)
 	preview.set_material(sm)
 	for i in channel_option_button.item_count:
 		var curve := Curve.new()
-		curve.add_point(Vector2.ZERO, 0, 1, Curve.TANGENT_LINEAR)
-		curve.add_point(Vector2.ONE, 1, 0, Curve.TANGENT_LINEAR)
+		CurveEdit.set_curve_preset(curve, 0)
 		curves.append(curve)
 	curve_edit.curve = curves[Channel.RGB]
 
@@ -43,7 +45,7 @@ func commit_action(cel: Image, project := Global.current_project) -> void:
 			preview.material.set_shader_parameter(param, params[param])
 	else:
 		var gen := ShaderImageEffect.new()
-		gen.generate_image(cel, SHADER, params, project.size)
+		gen.generate_image(cel, shader, params, project.size)
 
 
 func _on_channel_option_button_item_selected(index: int) -> void:

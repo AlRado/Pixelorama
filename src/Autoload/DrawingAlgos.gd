@@ -34,8 +34,16 @@ var omniscale_shader_premul_alpha: Shader:
 				"unshaded", "unshaded, blend_premul_alpha"
 			)
 		return omniscale_shader_premul_alpha
-var rotxel_shader := preload("res://src/Shaders/Effects/Rotation/SmearRotxel.gdshader")
-var nn_shader := preload("res://src/Shaders/Effects/Rotation/NearestNeighbour.gdshader")
+var rotxel_shader: Shader:
+	get:
+		if rotxel_shader == null:
+			rotxel_shader = load("res://src/Shaders/Effects/Rotation/SmearRotxel.gdshader")
+		return rotxel_shader
+var nn_shader: Shader:
+	get:
+		if nn_shader == null:
+			nn_shader = load("res://src/Shaders/Effects/Rotation/NearestNeighbour.gdshader")
+		return nn_shader
 var isometric_tile_cache := {}
 
 
@@ -108,8 +116,9 @@ func blend_layers(
 func set_layer_metadata_image(
 	layer: BaseLayer, cel: BaseCel, image: Image, index: int, include := true
 ) -> void:
-	# Store the blend mode
-	image.set_pixel(index, 0, Color(layer.blend_mode / 255.0, 0.0, 0.0, 0.0))
+	# Store the blend mode. We are adding 0.5 to it because if we don't, it breaks for
+	# RGH textures due to rounding errors.
+	image.set_pixel(index, 0, Color((layer.blend_mode + 0.5) / 255.0, 0.0, 0.0, 0.0))
 	# Store the opacity
 	if layer.is_visible_in_hierarchy() and include:
 		var opacity := cel.get_final_opacity(layer)
@@ -890,7 +899,7 @@ func generate_hexagonal_flat_top(image: Image) -> void:
 # Image effects
 func center(indices: Array) -> void:
 	var project := Global.current_project
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(project)
 	var redo_data := {}
 	var undo_data := {}
 	project.undo_redo.create_action("Center Frames")
@@ -989,7 +998,7 @@ func resize_image(
 func crop_to_selection() -> void:
 	if not Global.current_project.has_selection:
 		return
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(Global.current_project)
 	var redo_data := {}
 	var undo_data := {}
 	var rect := Global.current_project.selection_map.get_selection_rect(Global.current_project)
@@ -1012,7 +1021,7 @@ func crop_to_selection() -> void:
 ## Automatically makes the project smaller by looping through all of the cels and
 ## trimming out the pixels that are transparent in all cels.
 func crop_to_content() -> void:
-	Global.canvas.selection.transform_content_confirm()
+	Global.transform_content_confirmed.emit(Global.current_project)
 	var used_rect := Rect2i()
 	for cel in Global.current_project.get_all_pixel_cels():
 		if not cel is PixelCel:

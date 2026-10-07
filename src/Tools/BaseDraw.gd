@@ -38,6 +38,7 @@ var _is_mask_size_zero := true
 var _drawn_tiles: Dictionary[Vector2i, bool]
 var _circle_tool_shortcut: Array[Vector2i]
 var _mm_action: Keychain.MouseMovementInputAction
+var _is_using_mm_action := false
 
 
 func _ready() -> void:
@@ -59,6 +60,8 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if Input.is_action_just_released(&"mm_change_brush_size", true):
+		_is_using_mm_action = false
 	for action in [&"undo", &"redo"]:
 		if Input.is_action_pressed(action):
 			return
@@ -66,8 +69,21 @@ func _input(event: InputEvent) -> void:
 	# otherwise it will be changed twice on both left and right tools.
 	if tool_slot.button == MOUSE_BUTTON_RIGHT and Global.share_options_between_tools:
 		return
-	var brush_size_value := _mm_action.get_action_distance_int(event, true)
-	$Brush/BrushSize.value += brush_size_value
+
+	# Do not allow brush resizing at the same time as drawing.
+	# Otherwise, we have cases such as drawing snapped lines using Control + Shift
+	# and resizing brush at the same time, which is very annoying.
+	if (
+		Input.is_action_pressed(&"activate_left_tool")
+		or Input.is_action_pressed(&"activate_right_tool")
+	):
+		_is_using_mm_action = false
+		return
+	if Input.is_action_just_pressed(&"mm_change_brush_size", true):
+		_is_using_mm_action = true
+	if _is_using_mm_action:
+		var brush_size_value := _mm_action.get_action_distance_int(event, true)
+		$Brush/BrushSize.value += brush_size_value
 
 
 func _on_BrushType_pressed() -> void:
@@ -306,13 +322,14 @@ func commit_undo(action := "Draw") -> void:
 				if l.tileset in used_tilesets:
 					layers_to_update.append(l.index)
 		project.undo_redo.create_action(action)
-		manage_undo_redo_palettes()
+		if not _is_eraser:
+			manage_undo_redo_palettes()
 		project.deserialize_cel_undo_data(redo_data, _undo_data)
 		# we may be on a different layer during undo/redo
-		Global.current_project.undo_redo.add_do_property(
+		project.undo_redo.add_do_property(
 			Global.canvas, "mandatory_update_layers", layers_to_update
 		)
-		Global.current_project.undo_redo.add_undo_property(
+		project.undo_redo.add_undo_property(
 			Global.canvas, "mandatory_update_layers", layers_to_update
 		)
 		project.undo_redo.add_do_method(Global.undo_or_redo.bind(false, frame_index, layer_index))
@@ -320,48 +337,6 @@ func commit_undo(action := "Draw") -> void:
 		project.undo_redo.commit_action()
 
 	_undo_data.clear()
-
-
-## Manages conversion of global palettes into local if a drawable tool is used
-func manage_undo_redo_palettes() -> void:
-	if _is_eraser:
-		return
-	var palette_in_focus := Palettes.current_palette
-	if not is_instance_valid(palette_in_focus):
-		return
-	var palette_has_color := Palettes.current_palette.has_theme_color(tool_slot.color)
-	if not palette_in_focus.is_project_palette and Global.global_palettes_readonly:
-		# Make a project copy of the palette if it has (or about to have) the color
-		# and is still global (in readonly mode).
-		if palette_has_color or Palettes.auto_add_colors:
-			palette_in_focus = palette_in_focus.duplicate()
-			Palettes.undo_redo_add_palette(palette_in_focus, false)
-	if Palettes.auto_add_colors and not palette_has_color:
-		# Get an estimate of where the color will end up (used for undo)
-		if not palette_in_focus.is_project_palette:  ## readonly mode disabled
-			palette_in_focus.add_color(tool_slot.color, 0)
-			Global.palette_panel.redraw_current_palette()
-			Global.palette_panel.toggle_add_delete_buttons()
-		else:
-			var index := 0
-			var color_max: int = palette_in_focus.colors_max
-			# If palette is full automatically increase the palette height
-			if palette_in_focus.is_full():
-				color_max = palette_in_focus.width * (palette_in_focus.height + 1)
-			for i in range(0, color_max):
-				if not palette_in_focus.colors.has(i):
-					index = i
-					break
-			var undo_redo := Global.current_project.undo_redo
-			undo_redo.add_do_method(palette_in_focus.add_color.bind(tool_slot.color, 0))
-			undo_redo.add_undo_method(palette_in_focus.remove_color.bind(index))
-			if not Global.palette_panel:  # Failsafe
-				printerr("Missing global reference to PalettePanel")
-				return
-			undo_redo.add_do_method(Global.palette_panel.redraw_current_palette)
-			undo_redo.add_undo_method(Global.palette_panel.redraw_current_palette)
-			undo_redo.add_do_method(Global.palette_panel.toggle_add_delete_buttons)
-			undo_redo.add_undo_method(Global.palette_panel.toggle_add_delete_buttons)
 
 
 func draw_tool(pos: Vector2i) -> void:
@@ -517,7 +492,7 @@ func draw_fill_gap(start: Vector2i, end: Vector2i) -> void:
 
 
 func get_coords_to_draw(points: Array[Vector2i], draw_brush := true) -> PackedVector2Array:
-	if _brush_size == 1 and not _spacing_mode and not is_image_brush():
+	if _brush_size_dynamics == 1 and not _spacing_mode and not is_image_brush():
 		return points
 	# This needs to be a dictionary to ensure duplicate coordinates are not being added
 	var coords_to_draw: Dictionary[Vector2, int] = {}
@@ -773,6 +748,8 @@ func _set_pixel(pos: Vector2i, ignore_mirroring := false) -> void:
 
 
 func _set_pixel_no_cache(pos: Vector2i, ignore_mirroring := false) -> void:
+	if _stroke_project == null:
+		return
 	if randi() % 100 >= _brush_density:
 		return
 	pos = _stroke_project.tiles.get_canon_position(pos)

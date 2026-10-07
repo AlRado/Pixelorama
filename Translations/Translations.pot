@@ -40,6 +40,9 @@ msgstr ""
 msgid "Center"
 msgstr ""
 
+msgid "Main Menu"
+msgstr ""
+
 msgid "File"
 msgstr ""
 
@@ -403,19 +406,28 @@ msgstr ""
 msgid "Tallscreen"
 msgstr ""
 
+#. Found under the View menu.
 msgid "Mirror View"
 msgstr ""
 
+#. Found under the View menu.
 msgid "Show Grid"
 msgstr ""
 
+#. Found under the View menu.
 msgid "Show Pixel Grid"
 msgstr ""
 
+#. Found under the View menu.
 msgid "Show Rulers"
 msgstr ""
 
+#. Found under the View menu.
 msgid "Show Guides"
+msgstr ""
+
+#. Found under the View menu.
+msgid "Lock Guides"
 msgstr ""
 
 #. Found under the View menu.
@@ -1093,6 +1105,10 @@ msgstr ""
 msgid "All projects"
 msgstr ""
 
+#. An image effect that helps convert a flat image to isometric.
+msgid "Flat to Isometric"
+msgstr ""
+
 msgid "Invert Colors"
 msgstr ""
 
@@ -1520,6 +1536,9 @@ msgid "Belarusian"
 msgstr ""
 
 msgid "Thai"
+msgstr ""
+
+msgid "Slovenian"
 msgstr ""
 
 #. Found in the About dialog.
@@ -2617,6 +2636,10 @@ msgstr ""
 
 #. An option found in the right click menu of a cel. If selected, all non-transparent pixels of that cel get selected.
 msgid "Select pixels"
+msgstr ""
+
+#. An option found in the right click menu of a cel. If selected, centers the content of the cel.
+msgid "Center content"
 msgstr ""
 
 #. An option found in the right click menu of a cel. If selected, all selected cels get linked together.
@@ -3899,7 +3922,7 @@ msgid "Hold Shift while pressing to instantly remove."
 msgstr ""
 
 #. Shown in the confirmation dialog for removing a reference image.
-msgid "Are you sure you want to remove this reference image? It will not be deleted from your file system."
+msgid "Are you sure you want to remove this reference image?"
 msgstr ""
 
 #. Moves the reference image up in the list
@@ -3924,10 +3947,6 @@ msgstr ""
 
 #. Rotates the reference on the canvas
 msgid "Scale the selected reference image"
-msgstr ""
-
-#. Button to select no reference images in the Reference Images panel.
-msgid "none"
 msgstr ""
 
 #. Resets the Transform of the selected reference image on the canvas.
@@ -4064,7 +4083,7 @@ msgstr ""
 
 #. A confirmation dialog that appears when attempting to enable place-only mode in a tilemap layer.
 #: src/UI/Timeline/LayerProperties.tscn
-msgid "Enabling place-only mode is a permanent action. Once activated, you will only be able to place tiles, and you won't be able to modify existing tiles anymore on this layer."
+msgid "Enabling place-only mode is a permanent action. Once activated, you will only be able to place, duplicate and edit existing tiles, and you won't be able to use Manual, Auto and Stack modes."
 msgstr ""
 
 #: src/UI/TilesPanel.gd

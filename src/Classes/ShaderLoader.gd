@@ -6,6 +6,9 @@ const VALUE_SLIDER_V3_TSCN := preload("res://src/UI/Nodes/Sliders/ValueSliderV3.
 const BASIS_SLIDERS_TSCN := preload("res://src/UI/Nodes/Sliders/BasisSliders.tscn")
 const GRADIENT_EDIT_TSCN := preload("res://src/UI/Nodes/GradientEdit.tscn")
 const NOISE_GENERATOR := preload("res://src/UI/Nodes/NoiseGeneratorDialog.tscn")
+const UNIFORMS_TO_IGNORE: Array[String] = [
+	"PXO_time", "PXO_frame_index", "PXO_layer_index", "source_texture0"
+]
 
 static var dither_matrices: Array[DitherMatrix] = [
 	DitherMatrix.new(preload("res://assets/dither-matrices/bayer2.png"), "Bayer 2x2"),
@@ -22,6 +25,11 @@ class DitherMatrix:
 	func _init(_texture: Texture2D, _name: String) -> void:
 		texture = _texture
 		name = _name
+
+
+class ShaderMetadata:
+	var uniforms: PackedStringArray = []
+	var description: String = ""
 
 
 static func load_dither_matrix_from_file(file_path: String) -> void:
@@ -41,39 +49,18 @@ static func create_ui_for_shader_uniforms(
 	file_selected: Callable
 ) -> void:
 	var code := shader.code.split("\n")
-	var uniforms: PackedStringArray = []
-	var uniform_data: PackedStringArray = []
-	var description: String = ""
-	var description_began := false
-	# A Dictionary used to group together nodes
-	# under the same group_uniform. Currently only used for CurveTextures.
-	var group_nodes: Dictionary[String, Control] = {}
-	var color_button_hbox: HBoxContainer = null  # Used for RGBA buttons, if they exist.
-	for line in code:
-		# Management of "end" tags
-		if line.begins_with("// (end DESCRIPTION)"):
-			description_began = false
-		if description_began:
-			description += "\n" + line.strip_edges()
-
-		# Detection of uniforms
-		if line.begins_with("uniform") or line.begins_with("group_uniforms"):
-			uniforms.append(line)
-		if line.begins_with("// uniform_data"):
-			uniform_data.append(line)
-
-		# Management of "begin" tags
-		elif line.begins_with("// (begin DESCRIPTION)"):
-			description_began = true
-	# Validation of begin/end tags
-	if description_began == true:  # Description started but never ended. treat it as an error
-		print("Shader description started but never finished. Assuming empty description")
-		description = ""
+	var shader_metadata := get_shader_metadata(code)
+	var uniforms := shader_metadata.uniforms
+	var description := shader_metadata.description
 	if not description.is_empty():
 		parent_node.tooltip_text = str(
 			"Description:\n", description.replace("//", "").strip_edges()
 		)
 
+	# A Dictionary used to group together nodes
+	# under the same group_uniform. Currently only used for CurveTextures.
+	var group_nodes: Dictionary[String, Control] = {}
+	var color_button_hbox: HBoxContainer = null  # Used for RGBA buttons, if they exist.
 	var current_group := ""
 	for uniform in uniforms:
 		# Example uniform:
@@ -98,7 +85,7 @@ static func create_ui_for_shader_uniforms(
 			continue
 		var u_type := u_init[1]
 		var u_name := u_init[2]
-		if u_name in ["PXO_time", "PXO_frame_index", "PXO_layer_index"]:
+		if u_name in UNIFORMS_TO_IGNORE:
 			continue
 		var humanized_u_name := Keychain.humanize_snake_case(u_name) + ":"
 
@@ -156,7 +143,11 @@ static func create_ui_for_shader_uniforms(
 				params[u_name] = slider.value
 			var hbox := HBoxContainer.new()
 			hbox.add_child(label)
-			hbox.add_child(slider)
+			var vbox := VBoxContainer.new()
+			vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			hbox.add_child(vbox)
+			vbox.add_child(slider)
+			vbox.add_child(HSeparator.new())
 			parent_node.add_child(hbox)
 		elif u_type == "vec4":
 			if "source_color" in u_hint:
@@ -392,6 +383,101 @@ static func create_ui_for_shader_uniforms(
 			button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 
+static func get_shader_metadata(shader_code: PackedStringArray) -> ShaderMetadata:
+	var shader_metadata := ShaderMetadata.new()
+	var description_began := false
+	for line in shader_code:
+		if line.begins_with("// @"):
+			line = line.replace("// @", "")
+		if line.begins_with("// (end DESCRIPTION)"):
+			description_began = false
+		if description_began:
+			shader_metadata.description += "\n" + line.strip_edges()
+		if line.begins_with("uniform") or line.begins_with("group_uniforms"):
+			shader_metadata.uniforms.append(line)
+		elif line.begins_with("// (begin DESCRIPTION)"):
+			description_began = true
+
+	# Validation of begin/end tags
+	if description_began == true:  # Description started but never ended. treat it as an error
+		print("Shader description started but never finished. Assuming empty description")
+		shader_metadata.description = ""
+	return shader_metadata
+
+
+static func generate_texture_blit_shader(shader_inc: ShaderInclude) -> Shader:
+	var code := shader_inc.code.split("\n")
+	var shader_metadata := get_shader_metadata(code)
+	var uniform_declarations := ""
+	var uniform_names := ""
+	for uniform in shader_metadata.uniforms:
+		uniform_declarations += uniform + "\n"
+		var uniform_split := uniform.split("=")
+		var u_left_side := uniform_split[0].split(":")
+		var u_init := u_left_side[0].split(" ")
+		var uniform_string := u_init[0]
+		if uniform_string == "group_uniforms":
+			continue
+		var u_name := u_init[2].replace(";", "")
+		uniform_names += ", " + u_name
+	var shader_code := (
+		"""
+shader_type texture_blit;
+render_mode blend_disabled;
+
+#include "%s"
+
+uniform sampler2D source_texture0 : hint_blit_source0, filter_nearest;
+uniform sampler2D selection : filter_nearest, repeat_disable;
+%s
+
+void blit() {
+    COLOR0 = apply_effect(source_texture0, UV, selection%s);
+}
+	"""
+		% [shader_inc.resource_path, uniform_declarations, uniform_names]
+	)
+	var shader := Shader.new()
+	shader.code = shader_code
+	return shader
+
+
+static func generate_canvas_item_shader(shader_inc: ShaderInclude) -> Shader:
+	var code := shader_inc.code.split("\n")
+	var shader_metadata := get_shader_metadata(code)
+	var uniform_declarations := ""
+	var uniform_names := ""
+	for uniform in shader_metadata.uniforms:
+		uniform_declarations += uniform + "\n"
+		var uniform_split := uniform.split("=")
+		var u_left_side := uniform_split[0].split(":")
+		var u_init := u_left_side[0].split(" ")
+		var uniform_string := u_init[0]
+		if uniform_string == "group_uniforms":
+			continue
+		var u_name := u_init[2].replace(";", "")
+		uniform_names += ", " + u_name
+	var shader_code := (
+		"""
+shader_type canvas_item;
+render_mode unshaded;
+
+#include "%s"
+
+uniform sampler2D selection : filter_nearest;
+%s
+
+void fragment() {
+    COLOR = apply_effect(TEXTURE, UV, selection%s);
+}
+	"""
+		% [shader_inc.resource_path, uniform_declarations, uniform_names]
+	)
+	var shader := Shader.new()
+	shader.code = shader_code
+	return shader
+
+
 static func _vec2str_to_vector2(vec2: String) -> Vector2:
 	vec2 = vec2.replace("uvec2", "vec2")
 	vec2 = vec2.replace("ivec2", "vec2")
@@ -611,13 +697,4 @@ static func _shader_update_texture(
 static func modify_texture_resource(
 	image: Image, resource_name: StringName, update_callable: Callable
 ) -> void:
-	if not is_instance_valid(image):
-		image = Image.create_empty(64, 64, false, Image.FORMAT_RGBA8)
-	var resource_proj := ResourceProject.new([], resource_name, image.get_size())
-	resource_proj.layers.append(PixelLayer.new(resource_proj))
-	resource_proj.frames.append(resource_proj.new_empty_frame())
-	resource_proj.frames[0].cels[0].set_content(image)
-	resource_proj.resource_updated.connect(update_callable)
-	Global.projects.append(resource_proj)
-	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
+	ResourceProject.instantiate(resource_name, update_callable, image)

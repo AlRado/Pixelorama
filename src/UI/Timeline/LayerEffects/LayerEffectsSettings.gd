@@ -4,46 +4,57 @@ const LAYER_EFFECT_BUTTON = preload("res://src/UI/Timeline/LayerEffects/LayerEff
 const DELETE_TEXTURE := preload("res://assets/graphics/misc/close.svg")
 
 var effects: Array[LayerEffect] = [
-	LayerEffect.new("Offset & Scale", preload("res://src/Shaders/Effects/OffsetPixels.gdshader")),
+	LayerEffect.new(
+		"Offset & Scale", load("res://src/Shaders/Effects/OffsetPixels.gdshaderinc"), "Transform"
+	),
+	LayerEffect.new(
+		"Corner Pin", load("res://src/Shaders/Effects/CornerPin.gdshaderinc"), "Transform"
+	),
+	LayerEffect.new(
+		"Flat to Isometric",
+		load("res://src/Shaders/Effects/FlatToIsometric.gdshaderinc"),
+		"Transform"
+	),
 	LayerEffect.new(
 		"Convolution Matrix",
-		preload("res://src/Shaders/Effects/ConvolutionMatrix.gdshader"),
+		load("res://src/Shaders/Effects/ConvolutionMatrix.gdshaderinc"),
 		"Color"
 	),
 	LayerEffect.new(
-		"Gaussian Blur", preload("res://src/Shaders/Effects/GaussianBlur.gdshader"), "Blur"
+		"Gaussian Blur", load("res://src/Shaders/Effects/GaussianBlur.gdshaderinc"), "Blur"
 	),
 	LayerEffect.new(
-		"Gradient", preload("res://src/Shaders/Effects/Gradient.gdshader"), "Procedural"
+		"Gradient", load("res://src/Shaders/Effects/Gradient.gdshaderinc"), "Procedural"
 	),
 	LayerEffect.new(
-		"Outline", preload("res://src/Shaders/Effects/OutlineInline.gdshader"), "Procedural"
+		"Outline", load("res://src/Shaders/Effects/OutlineInline.gdshaderinc"), "Procedural"
 	),
 	LayerEffect.new(
-		"Drop Shadow", preload("res://src/Shaders/Effects/DropShadow.gdshader"), "Procedural"
+		"Drop Shadow", load("res://src/Shaders/Effects/DropShadow.gdshaderinc"), "Procedural"
 	),
-	LayerEffect.new("Invert Colors", preload("res://src/Shaders/Effects/Invert.gdshader"), "Color"),
+	LayerEffect.new("Invert Colors", load("res://src/Shaders/Effects/Invert.gdshaderinc"), "Color"),
 	LayerEffect.new(
-		"Desaturation", preload("res://src/Shaders/Effects/Desaturate.gdshader"), "Color"
+		"Desaturation", load("res://src/Shaders/Effects/Desaturate.gdshaderinc"), "Color"
 	),
 	LayerEffect.new(
-		"Adjust Hue/Saturation/Value", preload("res://src/Shaders/Effects/HSV.gdshader"), "Color"
+		"Adjust Hue/Saturation/Value", load("res://src/Shaders/Effects/HSV.gdshaderinc"), "Color"
 	),
 	LayerEffect.new(
 		"Adjust Brightness/Contrast",
-		preload("res://src/Shaders/Effects/BrightnessContrast.gdshader"),
+		load("res://src/Shaders/Effects/BrightnessContrast.gdshaderinc"),
 		"Color"
 	),
 	LayerEffect.new(
-		"Color Curves", preload("res://src/Shaders/Effects/ColorCurves.gdshader"), "Color"
+		"Color Curves", load("res://src/Shaders/Effects/ColorCurves.gdshaderinc"), "Color"
 	),
-	LayerEffect.new("Palettize", preload("res://src/Shaders/Effects/Palettize.gdshader"), "Color"),
-	LayerEffect.new("Pixelize", preload("res://src/Shaders/Effects/Pixelize.gdshader"), "Blur"),
-	LayerEffect.new("Posterize", preload("res://src/Shaders/Effects/Posterize.gdshader"), "Color"),
+	LayerEffect.new("Luma", load("res://src/Shaders/Effects/Luma.gdshaderinc"), "Color"),
+	LayerEffect.new("Palettize", load("res://src/Shaders/Effects/Palettize.gdshaderinc"), "Color"),
+	LayerEffect.new("Pixelize", load("res://src/Shaders/Effects/Pixelize.gdshaderinc"), "Blur"),
+	LayerEffect.new("Posterize", load("res://src/Shaders/Effects/Posterize.gdshaderinc"), "Color"),
 	LayerEffect.new(
-		"Gradient Map", preload("res://src/Shaders/Effects/GradientMap.gdshader"), "Color"
+		"Gradient Map", load("res://src/Shaders/Effects/GradientMap.gdshaderinc"), "Color"
 	),
-	LayerEffect.new("Index Map", preload("res://src/Shaders/Effects/IndexMap.gdshader"), "Color"),
+	LayerEffect.new("Index Map", load("res://src/Shaders/Effects/IndexMap.gdshader"), "Color"),
 ]
 ## A dictionary that maps each category to a [PopupMenu].
 var category_submenus: Dictionary[String, PopupMenu] = {}
@@ -227,6 +238,7 @@ func _delete_effect(effect: LayerEffect) -> void:
 
 
 func _apply_effect(layer: BaseLayer, effect: LayerEffect) -> void:
+	Global.transform_content_confirmed.emit()
 	var project := Global.current_project
 	var index := layer.effects.find(effect)
 	var redo_data := {}

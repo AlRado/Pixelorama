@@ -6,7 +6,7 @@ const DOCS_URL := "https://www.pixelorama.org/Introduction/"
 const ISSUES_URL := "https://github.com/Orama-Interactive/Pixelorama/issues"
 const SUPPORT_URL := "https://www.patreon.com/OramaInteractive"
 # gdlint: ignore=max-line-length
-const CHANGELOG_URL := "https://github.com/Orama-Interactive/Pixelorama/blob/master/CHANGELOG.md#v1110---2026-04-30"
+const CHANGELOG_URL := "https://github.com/Orama-Interactive/Pixelorama/blob/master/CHANGELOG.md#v123---2026-09-15"
 const EXTERNAL_LINK_ICON := preload("res://assets/graphics/misc/external_link.svg")
 const PIXELORAMA_ICON := preload("res://assets/graphics/icons/icon_16x16.png")
 const HEART_ICON := preload("res://assets/graphics/misc/heart.svg")
@@ -39,6 +39,7 @@ var scale_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/ScaleIma
 var resize_canvas_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/ResizeCanvas.tscn")
 var mirror_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/FlipImageDialog.tscn")
 var rotate_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/RotateImage.tscn")
+var isometric_image_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/flat_to_isometric.tscn")
 var invert_colors_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/InvertColorsDialog.tscn")
 var desaturate_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/DesaturateDialog.tscn")
 var outline_dialog := Dialog.new("res://src/UI/Dialogs/ImageEffects/OutlineDialog.tscn")
@@ -80,8 +81,6 @@ var backup_dialog := Dialog.new("res://src/UI/Dialogs/BackupRestoreDialog.tscn")
 @onready var layout_from_option_button := %LayoutFrom as OptionButton
 @onready var cursor_position_label := %CursorPosition as Label
 @onready var current_frame_mark := %CurrentFrameMark as Label
-
-@onready var greyscale_vision: ColorRect = main_ui.find_child("GreyscaleVision")
 
 
 class Dialog:
@@ -180,8 +179,10 @@ func handle_main_menu_collapse() -> void:
 
 func _on_project_about_to_switch() -> void:
 	var project := Global.current_project
-	project.resized.disconnect(_on_project_resized)
-	project.selection_changed.disconnect(_on_project_selection_changed)
+	if project.resized.is_connected(_on_project_resized):
+		project.resized.disconnect(_on_project_resized)
+	if project.resized.is_connected(_on_project_selection_changed):
+		project.selection_changed.disconnect(_on_project_selection_changed)
 
 
 func _on_project_switched() -> void:
@@ -224,12 +225,16 @@ func _on_cursor_position_text_changed(text: String) -> void:
 func _update_file_menu_buttons(project: Project) -> void:
 	if not is_instance_valid(file_menu):
 		return
-	if project.export_directory_path.is_empty():
+	var export_profile = project.export_profile
+	if export_profile.directory_path.is_empty():
 		file_menu.set_item_text(Global.FileMenu.SAVE, tr("Save"))
 	else:
-		file_menu.set_item_text(Global.FileMenu.SAVE, tr("Save") + " %s" % project.file_name)
+		file_menu.set_item_text(Global.FileMenu.SAVE, tr("Save") + " %s" % export_profile.file_name)
 	if project.was_exported:
-		var f_name := " %s" % (project.file_name + Export.file_format_string(project.file_format))
+		var f_name := (
+			" %s"
+			% (export_profile.file_name + Export.file_format_string(export_profile.file_format))
+		)
 		if project.export_overwrite:
 			file_menu.set_item_text(Global.FileMenu.EXPORT, tr("Overwrite") + f_name)
 		else:
@@ -323,7 +328,6 @@ func _setup_view_menu() -> void:
 		"Center Canvas": "center_canvas",
 		"Tile Mode": "",
 		"Tile Mode Offsets": "",
-		"Grayscale View": &"grayscale_view",
 		"Mirror View": "mirror_view",
 		"Show Grid": "show_grid",
 		"Show Pixel Grid": "show_pixel_grid",
@@ -332,6 +336,7 @@ func _setup_view_menu() -> void:
 		"Show Guides": "show_guides",
 		"Show Mouse Guides": "",
 		"Show Reference Images": "show_reference_images",
+		"Lock Guides": "lock_guides",
 		"Display Layer Effects": &"display_layer_effects",
 		"Snap To": "",
 	}
@@ -350,6 +355,7 @@ func _setup_view_menu() -> void:
 	view_menu.set_item_checked(Global.ViewMenu.SHOW_RULERS, true)
 	view_menu.set_item_checked(Global.ViewMenu.SHOW_GUIDES, true)
 	view_menu.set_item_checked(Global.ViewMenu.SHOW_REFERENCE_IMAGES, true)
+	view_menu.set_item_checked(Global.ViewMenu.LOCK_GUIDES, false)
 	view_menu.set_item_checked(Global.ViewMenu.DISPLAY_LAYER_EFFECTS, true)
 	view_menu.hide_on_checkable_item_selection = false
 	view_menu.id_pressed.connect(view_menu_id_pressed)
@@ -370,6 +376,9 @@ func _setup_view_menu() -> void:
 	)
 	var show_mouse_guides: bool = Global.config_cache.get_value(
 		"view_menu", "show_mouse_guides", Global.show_mouse_guides
+	)
+	var lock_guides: bool = Global.config_cache.get_value(
+		"view_menu", "lock_guides", Global.lock_guides
 	)
 	var display_layer_effects: bool = Global.config_cache.get_value(
 		"view_menu", "display_layer_effects", Global.display_layer_effects
@@ -398,6 +407,8 @@ func _setup_view_menu() -> void:
 		_toggle_show_mouse_guides()
 	if show_pixel_indices != Global.show_pixel_indices:
 		_toggle_show_pixel_indices()
+	if lock_guides != Global.lock_guides:
+		Global.lock_guides = lock_guides
 	if display_layer_effects != Global.display_layer_effects:
 		Global.display_layer_effects = display_layer_effects
 	if snap_to_rectangular_grid_boundary != Global.snap_to_rectangular_grid_boundary:
@@ -543,6 +554,7 @@ func _setup_effects_menu() -> void:
 	_set_menu_shortcut(&"offset_image", effects_transform_submenu, 0, "Offset & Scale Image")
 	_set_menu_shortcut(&"mirror_image", effects_transform_submenu, 1, "Mirror Image")
 	_set_menu_shortcut(&"rotate_image", effects_transform_submenu, 2, "Rotate Image")
+	_set_menu_shortcut(&"flat_to_isometric", effects_transform_submenu, 3, "Flat to Isometric")
 	effects_transform_submenu.id_pressed.connect(_on_effects_transform_submenu_id_pressed)
 	effects_menu.add_child(effects_transform_submenu)
 	effects_menu.add_submenu_node_item("Transform", effects_transform_submenu)
@@ -817,8 +829,6 @@ func view_menu_id_pressed(id: int) -> void:
 			Global.camera.offset = Global.current_project.size / 2
 		Global.ViewMenu.TILE_MODE_OFFSETS:
 			_popup_dialog(get_tree().current_scene.tile_mode_offsets_dialog)
-		Global.ViewMenu.GREYSCALE_VIEW:
-			_toggle_greyscale_view()
 		Global.ViewMenu.MIRROR_VIEW:
 			_toggle_mirror_view()
 		Global.ViewMenu.SHOW_GRID:
@@ -838,6 +848,8 @@ func view_menu_id_pressed(id: int) -> void:
 			)
 		Global.ViewMenu.SHOW_PIXEL_INDICES:
 			_toggle_show_pixel_indices()
+		Global.ViewMenu.LOCK_GUIDES:
+			Global.lock_guides = not Global.lock_guides
 		Global.ViewMenu.DISPLAY_LAYER_EFFECTS:
 			Global.display_layer_effects = not Global.display_layer_effects
 		_:
@@ -866,9 +878,9 @@ func _tile_mode_submenu_id_pressed(id: Tiles.MODE) -> void:
 	Global.transparent_checker.fit_rect(Global.current_project.tiles.get_bounding_rect())
 	for i in Tiles.MODE.values():
 		tile_mode_submenu.set_item_checked(i, i == id)
+	Global.pixel_grid_updated.emit()
+	Global.grid_updated.emit()
 	Global.canvas.tile_mode.queue_redraw()
-	Global.canvas.pixel_grid.queue_redraw()
-	Global.canvas.grid.queue_redraw()
 	get_tree().current_scene.tile_mode_offsets_dialog.change_mask()
 
 
@@ -1058,12 +1070,6 @@ func _on_delete_layout_confirmation_visibility_changed() -> void:
 	Global.dialog_open(delete_layout_confirmation.visible)
 
 
-func _toggle_greyscale_view() -> void:
-	Global.greyscale_view = !Global.greyscale_view
-	greyscale_vision.visible = Global.greyscale_view
-	view_menu.set_item_checked(Global.ViewMenu.GREYSCALE_VIEW, Global.greyscale_view)
-
-
 func _toggle_mirror_view() -> void:
 	Global.mirror_view = !Global.mirror_view
 	var marching_ants_outline: Sprite2D = Global.canvas.selection.marching_ants_outline
@@ -1081,15 +1087,13 @@ func _toggle_mirror_view() -> void:
 func _toggle_show_grid() -> void:
 	Global.draw_grid = !Global.draw_grid
 	view_menu.set_item_checked(Global.ViewMenu.SHOW_GRID, Global.draw_grid)
-	if Global.canvas.grid:
-		Global.canvas.grid.queue_redraw()
+	Global.grid_updated.emit()
 
 
 func _toggle_show_pixel_grid() -> void:
 	Global.draw_pixel_grid = !Global.draw_pixel_grid
 	view_menu.set_item_checked(Global.ViewMenu.SHOW_PIXEL_GRID, Global.draw_pixel_grid)
-	if Global.canvas.pixel_grid:
-		Global.canvas.pixel_grid.queue_redraw()
+	Global.pixel_grid_updated.emit()
 
 
 func _toggle_show_pixel_indices() -> void:
@@ -1185,6 +1189,8 @@ func _on_effects_transform_submenu_id_pressed(id: int) -> void:
 			mirror_image_dialog.popup()
 		2:
 			rotate_image_dialog.popup()
+		3:
+			isometric_image_dialog.popup()
 
 
 func _on_effects_color_submenu_id_pressed(id: int) -> void:
@@ -1239,7 +1245,7 @@ func select_menu_id_pressed(id: int) -> void:
 			Global.canvas.selection.select_cel_rect()
 		Global.SelectMenu.WRAP_STROKES:
 			var state = select_menu.is_item_checked(id)
-			Global.canvas.selection.flag_tilemode = !state
+			SelectionNode.flag_tilemode = !state
 			select_menu.set_item_checked(id, !state)
 		_:
 			_handle_metadata(id, select_menu)

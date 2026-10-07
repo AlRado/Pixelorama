@@ -6,7 +6,6 @@ static var frame_ui_size := 50:
 		frame_ui_size = clampi(value, 10, 128)
 ## Array of keyframe IDs.
 static var selected_keyframes: Array[int]
-static var next_keyframe_id := 0
 var current_layer: BaseLayer:
 	set(value):
 		if is_instance_valid(current_layer):
@@ -22,6 +21,8 @@ var current_layer: BaseLayer:
 		track_scroll_container.ensure_control_visible(keyframe_timeline_cursor)
 		track_scroll_container.scroll_vertical = v_scroll
 var layer_element_tree_vscrollbar: VScrollBar
+## Keeps track of all categories if they are collapsed. It doesn't matter if they exist or not
+var collapsed_track_names: PackedStringArray
 
 @onready
 var keyframe_timeline_frame_display: KeyframeTimelineFrameDisplay = %KeyframeTimelineFrameDisplay
@@ -95,7 +96,8 @@ func _on_effects_added_removed() -> void:
 
 func _on_project_about_to_switch() -> void:
 	var project := Global.current_project
-	project.frames_updated.disconnect(_add_ui_frames)
+	if project.frames_updated.is_connected(_add_ui_frames):
+		project.frames_updated.disconnect(_add_ui_frames)
 
 
 func _on_project_switched() -> void:
@@ -117,17 +119,30 @@ func recreate_timeline() -> void:
 	var h_scroll := track_scroll_container.scroll_horizontal
 	var v_scroll := track_scroll_container.scroll_vertical
 	layer_element_tree.clear()
-	layer_element_tree.create_item()
 	for child in track_container.get_children():
 		child.queue_free()
+	var root := layer_element_tree.create_item()
+	var layer_item := add_section(
+		current_layer.name, KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT, root
+	)
+	#region Add tracks for layer's animatable properties.
+	for param_name in current_layer.animated_params:
+		add_property(
+			param_name, KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT, layer_item, current_layer
+		)
+	#endregion
 	#region Add tracks for animatable objects.
 	for effect in current_layer.effects:
-		var effect_item := add_section(effect.name, KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT)
+		var effect_item := add_section(
+			effect.name, KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT, layer_item
+		)
 		for param_name in effect.params:
-			if param_name in ["PXO_time", "PXO_frame_index", "PXO_layer_index"]:
+			if not effect.is_param_valid(param_name):
+				continue
+			if param_name in ShaderLoader.UNIFORMS_TO_IGNORE:
 				continue
 			var value = effect.params[param_name]
-			if not LayerEffect.is_animatable_type(value):
+			if not AnimatableObject.is_animatable_type(value):
 				continue
 			add_property(
 				param_name, KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT, effect_item, effect
@@ -136,15 +151,19 @@ func recreate_timeline() -> void:
 	select_keyframes()
 	track_scroll_container.scroll_horizontal = h_scroll
 	track_scroll_container.scroll_vertical = v_scroll
-	# Hide UI which is un-usable
+	# Hide UI which is un-usable.
 	_hide_extra_ui()
 
 
 func add_section(
-	section_name: StringName, track_type: KeyframeAnimationTrack.TrackTypes
+	section_name: StringName, track_type: KeyframeAnimationTrack.TrackTypes, parent_item: TreeItem
 ) -> TreeItem:
-	var tree_item := layer_element_tree.create_item()
+	var tree_item := parent_item.create_child()
 	tree_item.set_text(0, section_name)
+	if section_name in collapsed_track_names:
+		tree_item.collapsed = true
+	if parent_item.collapsed:
+		return
 	var track := KeyframeAnimationTrack.new()
 	track.type = track_type
 	track.custom_minimum_size.x = frame_ui_size * Global.current_project.frames.size()
@@ -153,28 +172,33 @@ func add_section(
 	return tree_item
 
 
-# NOTE: the property to be animated must have a animated_params variable
+# NOTE: The property to be animated must have a animated_params variable.
 func add_property(
 	property: StringName,
 	param_type: KeyframeAnimationTrack.TrackTypes,
 	parent_item: TreeItem,
-	animatable_object: RefCounted,
+	animatable_object: AnimatableObject,
 	animation_dictionary_name := &"animated_params"
 ):
+	if not is_instance_valid(parent_item):
+		return
 	var param_tree_item := parent_item.create_child()
 	param_tree_item.set_text(0, Keychain.humanize_snake_case(property))
+	if parent_item.collapsed:
+		return
+
+	var tree_item_area_rect := layer_element_tree.get_item_area_rect(param_tree_item)
 	var param_track := KeyframeAnimationTrack.new()
 	param_track.type = param_type
 	param_track.timeline = self
 	param_track.param_name = property
 	param_track.is_property = true
-	var tree_item_area_rect := layer_element_tree.get_item_area_rect(param_tree_item)
 	param_track.custom_minimum_size.x = frame_ui_size * Global.current_project.frames.size()
 	param_track.custom_minimum_size.y = tree_item_area_rect.size.y
 	track_container.add_child(param_track)
 	match param_track.type:
 		KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT:
-			param_track.effect = animatable_object
+			param_track.animatable_object = animatable_object
 
 	var animation_dictionary: Dictionary[String, Dictionary] = animatable_object.get(
 		animation_dictionary_name
@@ -211,6 +235,7 @@ func _create_keyframe_button(
 	key_button.position.y = param_track.custom_minimum_size.y / 2 - key_button.size.y / 2
 	key_button.pressed.connect(_on_keyframe_pressed.bind(key_button))
 	key_button.updated_position.connect(update_keyframe_positions)
+	key_button.deleted.connect(_on_keyframe_deleted)
 	return key_button
 
 
@@ -261,8 +286,11 @@ func select_keyframes() -> void:
 	var track := key_button.get_parent() as KeyframeAnimationTrack
 	var property_properties := {}  # I apologize for the horrible variable name.
 	if track.type == KeyframeAnimationTrack.TrackTypes.LAYER_EFFECT:
-		property_properties = track.effect.param_properties[param_name].duplicate()
-	property_properties["hint_string"] = "or_less,or_greater"
+		property_properties = track.animatable_object.param_properties[param_name].duplicate()
+	if property_properties.has("hint_string"):
+		property_properties["hint_string"] += ",or_less,or_greater"
+	else:
+		property_properties["hint_string"] = "or_less,or_greater"
 	var node := Global.create_node_from_variable(
 		property, _on_keyframe_property_changed.bind("value"), property_properties
 	)
@@ -271,7 +299,7 @@ func select_keyframes() -> void:
 	var trans_type = dict[param_name][frame_index]["trans"]
 	var ease_type = dict[param_name][frame_index]["ease"]
 
-	if LayerEffect.is_interpolatable_type(property):
+	if AnimatableObject.is_interpolatable_type(property):
 		var trans_label := Label.new()
 		trans_label.text = "Interpolation:"
 		trans_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -292,7 +320,7 @@ func select_keyframes() -> void:
 		trans_type_options.add_item("Bouncing at the end", Tween.TRANS_BOUNCE)
 		trans_type_options.add_item("Backing out at ends", Tween.TRANS_BACK)
 		trans_type_options.add_item("Spring towards the end", Tween.TRANS_SPRING)
-		trans_type_options.add_item("Constant", Tween.TRANS_SPRING + 1)
+		trans_type_options.add_item("Constant", AnimatableObject.TRANS_CONSTANT)
 		trans_type_options.select(trans_type)
 		trans_type_options.item_selected.connect(_on_keyframe_property_changed.bind("trans"))
 		trans_type_options.fit_to_longest_item = false
@@ -416,12 +444,14 @@ func _update_keyframe_property_ui(dict: Dictionary, keyframe_id: int) -> void:
 		ease_type_options.select(ease_type)
 
 
-func add_effect_keyframe(effect: LayerEffect, frame_index: int, param_name: String) -> void:
+func add_effect_keyframe(anim_obj: AnimatableObject, frame_index: int, param_name: String) -> void:
+	var project := Global.current_project
+	var next_keyframe_id := project.next_keyframe_id
 	selected_keyframes = [next_keyframe_id]
-	var undo_redo := Global.current_project.undo_redo
+	var undo_redo := project.undo_redo
 	undo_redo.create_action("Add keyframe")
-	undo_redo.add_do_method(effect.set_keyframe.bind(param_name, frame_index))
-	undo_redo.add_undo_method(func(): effect.animated_params[param_name].erase(frame_index))
+	undo_redo.add_do_method(anim_obj.add_keyframe.bind(param_name, frame_index, project))
+	undo_redo.add_undo_method(anim_obj.delete_keyframe.bind(param_name, frame_index))
 	undo_redo.add_undo_method(unselect_keyframe.bind(next_keyframe_id))
 	undo_redo.add_do_method(recreate_timeline)
 	undo_redo.add_undo_method(recreate_timeline)
@@ -430,16 +460,29 @@ func add_effect_keyframe(effect: LayerEffect, frame_index: int, param_name: Stri
 	undo_redo.commit_action()
 
 
-func _on_keyframe_deleted() -> void:
+func _on_keyframe_deleted(keyframe_id := -1) -> void:
 	var undo_redo := Global.current_project.undo_redo
 	undo_redo.create_action("Delete keyframe")
-	for key_button in get_selected_keyframe_buttons():
+	var keyframe_buttons: Array[KeyframeButton]
+	if keyframe_id == -1 or keyframe_id in selected_keyframes:
+		keyframe_buttons = get_selected_keyframe_buttons()
+	else:
+		# If the keyframe we are deleting is not selected, find it.
+		for kfb: KeyframeButton in Global.get_tree().get_nodes_in_group(&"KeyframeButtons"):
+			if kfb.keyframe_id == keyframe_id:
+				keyframe_buttons = [kfb]
+				break
+	for key_button in keyframe_buttons:
+		var track := key_button.get_parent() as KeyframeAnimationTrack
 		var dict := key_button.dict
 		var param_name := key_button.param_name
 		var frame_index := key_button.frame_index
 		var old_dict = dict[param_name][frame_index].duplicate()
-		undo_redo.add_do_method(func(): dict[param_name].erase(frame_index))
-		undo_redo.add_undo_method(func(): dict[param_name][frame_index] = old_dict)
+		var anim_obj := track.animatable_object
+		undo_redo.add_do_method(anim_obj.delete_keyframe.bind(param_name, frame_index))
+		undo_redo.add_undo_method(
+			anim_obj.set_keyframe_data.bind(param_name, frame_index, old_dict)
+		)
 		undo_redo.add_do_method(unselect_keyframe.bind(key_button.keyframe_id))
 	undo_redo.add_do_method(recreate_timeline)
 	undo_redo.add_undo_method(recreate_timeline)
@@ -503,6 +546,7 @@ func _on_track_scroll_container_resized() -> void:
 	var r_marg := properties_container.size.x if properties_container.is_visible_in_tree() else 0.0
 	margin_container.add_theme_constant_override(&"margin_left", l_marg + split_separation)
 	margin_container.add_theme_constant_override(&"margin_right", r_marg + split_separation)
+	await get_tree().process_frame
 	keyframe_timeline_cursor.update_position()
 
 
@@ -520,3 +564,18 @@ func _on_layer_element_tree_vertical_scrolling() -> void:
 
 func _on_layer_element_tree_gui_input(_event: InputEvent) -> void:
 	track_scroll_container.scroll_vertical = layer_element_tree.get_scroll().y
+
+
+func _on_layer_element_tree_item_collapsed(item: TreeItem) -> void:
+	var section_name := item.get_text(0)
+	var collapse_state_changed := false
+	if item.collapsed and not section_name in collapsed_track_names:
+		collapsed_track_names.append(item.get_text(0))
+		collapse_state_changed = true
+	elif not item.collapsed and section_name in collapsed_track_names:
+		collapsed_track_names.erase(item.get_text(0))
+		collapse_state_changed = true
+	if collapse_state_changed:
+		unselect_keyframe()
+		await get_tree().process_frame
+		recreate_timeline()

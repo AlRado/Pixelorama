@@ -56,7 +56,6 @@ autowrap_mode = 3
 [node name="ToleranceSlider" type="TextureProgressBar" parent="." index="5" unique_id=1967537478]
 custom_minimum_size = Vector2(32, 24)
 layout_mode = 2
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 max_value = 255.0

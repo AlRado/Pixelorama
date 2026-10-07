@@ -108,10 +108,13 @@ func _ready() -> void:
 	selection_node.transformation_canceled.connect(func(): active_handle = null)
 	preview_transform_changed.connect(_on_preview_transform_changed)
 	Global.camera.zoom_changed.connect(queue_redraw)
+	Tools.tool_changed.connect(func(_tool_name: String, _button: int) -> void: queue_redraw())
 	set_process_input(false)
 
 
 func _input(event: InputEvent) -> void:
+	if not Tools.selection_tool_has_selection():
+		return
 	var project := Global.current_project
 	if not project.layers[project.current_layer].can_layer_get_drawn():
 		return
@@ -163,6 +166,8 @@ func _draw() -> void:
 		var preview_color := Color(1, 1, 1, Global.transformation_preview_alpha)
 		draw_texture(image_texture, Vector2.ZERO, preview_color)
 	draw_set_transform(position_tmp, rotation, scale_tmp)
+	if not Tools.selection_tool_has_selection():
+		return
 	# Draw handles
 	for handle in handles:
 		var pos := get_handle_position(handle)
@@ -608,7 +613,7 @@ func begin_transform(
 			if currently_transforming:
 				# If we are transforming the content and we want to only transform the selection,
 				# confirm the transformation and begin a new one, that does not include the content.
-				selection_node.transform_content_confirm(false)
+				Global.transform_content_confirmed.emit(project, false)
 			selection_node.undo_data = selection_node.get_undo_data(false)
 			only_transforms_selection = true
 		currently_transforming = true
@@ -617,7 +622,7 @@ func begin_transform(
 		if only_transforms_selection:
 			# If we are only transforming selection and we want to transform the content as well,
 			# confirm the transformation and begin a new one, that includes the content.
-			selection_node.transform_content_confirm(false)
+			Global.transform_content_confirmed.emit(project, false)
 	currently_transforming = true
 	if not pre_transformed_image.is_empty():
 		return
@@ -658,7 +663,7 @@ func begin_transform(
 	)
 	for cel in selection_node.get_selected_draw_cels():
 		var cel_image := cel.get_image()
-		cel.transformed_content = selection_node.get_selected_image(cel_image)
+		cel.transformed_content = SelectionNode.get_selected_image(cel_image)
 		cel_image.blit_rect_mask(
 			clear_image,
 			cel.transformed_content,

@@ -213,8 +213,8 @@ grow_vertical = 2
 texture = ExtResource("6_7v0q5")
 
 [node name="Images" type="Panel" parent="ScrollContainer/Container" unique_id=819465132]
-clip_contents = true
 custom_minimum_size = Vector2(0, 200)
+clip_contents = true
 layout_mode = 2
 mouse_filter = 1
 
@@ -251,26 +251,7 @@ references_panel = NodePath("../../..")
 [node name="HSeparator" type="HSeparator" parent="ScrollContainer/Container/ReferenceEdit" unique_id=558166546]
 layout_mode = 2
 
-[node name="ImageOptions" type="HBoxContainer" parent="ScrollContainer/Container/ReferenceEdit" unique_id=2128356201]
-layout_mode = 2
-
-[node name="WarningLabel" type="Label" parent="ScrollContainer/Container/ReferenceEdit/ImageOptions" unique_id=1216242850]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.972549, 1, 0.545098, 1)
-text = "Image not found!"
-text_overrun_behavior = 3
-
-[node name="ImagePath" type="Button" parent="ScrollContainer/Container/ReferenceEdit/ImageOptions" unique_id=1116905021]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 4
-text = "Image Path"
-alignment = 0
-text_overrun_behavior = 3
-
-[node name="Remove" type="Button" parent="ScrollContainer/Container/ReferenceEdit/ImageOptions" unique_id=840500749]
+[node name="Remove" type="Button" parent="ScrollContainer/Container/ReferenceEdit" unique_id=840500749]
 layout_mode = 2
 tooltip_text = "Hold Shift while pressing to instantly remove."
 theme_override_colors/font_color = Color(1, 0.490196, 0.419608, 1)
@@ -391,7 +372,6 @@ text = "Color Clamping"
 custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 2
 theme_type_variation = &"ValueSlider"
 nine_patch_stretch = true
 stretch_margin_left = 3
@@ -407,7 +387,7 @@ one_shot = true
 [node name="ConfirmRemoveDialog" type="ConfirmationDialog" parent="ScrollContainer/Container/ReferenceEdit" unique_id=1592631916]
 position = Vector2i(0, 36)
 size = Vector2i(454, 106)
-dialog_text = "Are you sure you want to remove this reference image? It will not be deleted from your file system."
+dialog_text = "Are you sure you want to remove this reference image?"
 dialog_autowrap = true
 
 [node name="Overlay" type="CanvasLayer" parent="." unique_id=1572617690]
@@ -417,7 +397,7 @@ color = Color(0, 0.741176, 1, 0.501961)
 
 [connection signal="pressed" from="ScrollContainer/Container/Tools/MoveImageLeftBtn" to="." method="_on_move_image_left_pressed"]
 [connection signal="pressed" from="ScrollContainer/Container/Tools/MoveImageRightBtn" to="." method="_on_move_image_right_pressed"]
-[connection signal="pressed" from="ScrollContainer/Container/ReferenceEdit/ImageOptions/Remove" to="ScrollContainer/Container/ReferenceEdit" method="_on_Remove_pressed"]
+[connection signal="pressed" from="ScrollContainer/Container/ReferenceEdit/Remove" to="ScrollContainer/Container/ReferenceEdit" method="_on_Remove_pressed"]
 [connection signal="pressed" from="ScrollContainer/Container/ReferenceEdit/Options/Reset" to="ScrollContainer/Container/ReferenceEdit" method="_on_Reset_pressed"]
 [connection signal="value_changed" from="ScrollContainer/Container/ReferenceEdit/Options/Position/X" to="ScrollContainer/Container/ReferenceEdit" method="_on_X_value_changed"]
 [connection signal="value_changed" from="ScrollContainer/Container/ReferenceEdit/Options/Position/Y" to="ScrollContainer/Container/ReferenceEdit" method="_on_Y_value_changed"]
