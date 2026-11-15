@@ -1,17 +1,21 @@
 extends ImageEffect
 
 enum Animate { HUE, SATURATION, VALUE }
-var shader := preload("res://src/Shaders/Effects/HSV.gdshader")
+
+var shader_inc := load("res://src/Shaders/Effects/HSV.gdshaderinc")
+var shader: Shader
 
 @onready var hue_slider := $VBoxContainer/HueSlider as ValueSlider
 @onready var sat_slider := $VBoxContainer/SaturationSlider as ValueSlider
 @onready var val_slider := $VBoxContainer/ValueSlider as ValueSlider
+@onready var overflow_check_box := $VBoxContainer/OverflowCheckBox as CheckBox
 
 
 func _ready() -> void:
-	super._ready()
+	shader = ShaderLoader.generate_texture_blit_shader(shader_inc)
+	super()
 	var sm := ShaderMaterial.new()
-	sm.shader = shader
+	sm.shader = ShaderLoader.generate_canvas_item_shader(shader_inc)
 	preview.set_material(sm)
 	# set as in enum
 	animate_panel.add_float_property("Hue", hue_slider)
@@ -25,15 +29,21 @@ func _about_to_popup() -> void:
 
 
 func commit_action(cel: Image, project := Global.current_project) -> void:
-	var hue = animate_panel.get_animated_value(commit_idx, Animate.HUE) / 360
-	var sat = animate_panel.get_animated_value(commit_idx, Animate.SATURATION) / 100
-	var val = animate_panel.get_animated_value(commit_idx, Animate.VALUE) / 100
+	var hue = animate_panel.get_animated_value(commit_idx, Animate.HUE)
+	var sat = animate_panel.get_animated_value(commit_idx, Animate.SATURATION)
+	var val = animate_panel.get_animated_value(commit_idx, Animate.VALUE)
 	var selection_tex: ImageTexture
 	if selection_checkbox.button_pressed and project.has_selection:
 		var selection := project.selection_map.return_cropped_copy(project, project.size)
 		selection_tex = ImageTexture.create_from_image(selection)
 
-	var params := {"hue": hue, "saturation": sat, "value": val, "selection": selection_tex}
+	var params := {
+		"hue": hue,
+		"saturation": sat,
+		"value": val,
+		"selection": selection_tex,
+		"wrap_overflowing": overflow_check_box.button_pressed
+	}
 	if !has_been_confirmed:
 		for param in params:
 			preview.material.set_shader_parameter(param, params[param])
@@ -58,4 +68,8 @@ func _on_SaturationSlider_value_changed(_value: float) -> void:
 
 
 func _on_ValueSlider_value_changed(_value: float) -> void:
+	update_preview()
+
+
+func _on_overflow_check_box_toggled(_toggled_on: bool) -> void:
 	update_preview()

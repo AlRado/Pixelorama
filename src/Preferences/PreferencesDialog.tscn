@@ -3,13 +3,13 @@
 [ext_resource type="Script" uid="uid://dek2dqmbe5dt3" path="res://src/Preferences/PreferencesDialog.gd" id="1"]
 [ext_resource type="Texture2D" uid="uid://0ij8aasy3k3b" path="res://addons/keychain/assets/search.svg" id="2_praud"]
 [ext_resource type="PackedScene" uid="uid://bq7ibhm0txl5p" path="res://addons/keychain/ShortcutEdit.tscn" id="3"]
-[ext_resource type="Script" uid="uid://dx8vbnfkoahh6" path="res://src/Preferences/ThemesPreferences.gd" id="3_nvl8k"]
 [ext_resource type="Script" uid="uid://cybud13k7nk1c" path="res://src/Preferences/GridPreferences.gd" id="4_76iff"]
 [ext_resource type="PackedScene" uid="uid://yjhp0ssng2mp" path="res://src/UI/Nodes/Sliders/ValueSlider.tscn" id="5_rlmsh"]
 [ext_resource type="PackedScene" uid="uid://bbnqcxa20a5a5" path="res://src/UI/Nodes/Sliders/ValueSliderV2.tscn" id="7"]
 [ext_resource type="Script" uid="uid://dxjamv5np8av3" path="res://src/Preferences/ExtensionsPreferences.gd" id="7_8ume5"]
 [ext_resource type="Script" uid="uid://tfdhqto6j5j0" path="res://src/UI/Nodes/Sliders/ValueSlider.gd" id="8"]
 [ext_resource type="PackedScene" uid="uid://chy5d42l72crk" path="res://src/UI/ExtensionExplorer/ExtensionExplorer.tscn" id="8_jmnx8"]
+[ext_resource type="Script" uid="uid://dc6yf25q3sacq" path="res://src/Preferences/LicenseProperties.gd" id="8_praud"]
 
 [sub_resource type="ButtonGroup" id="ButtonGroup_8vsfb"]
 
@@ -179,7 +179,6 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 min_value = 0.5
@@ -211,7 +210,6 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 min_value = 4.0
@@ -238,6 +236,23 @@ text = "Font:"
 [node name="FontOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/InterfaceOptions" unique_id=1451717562]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_default_cursor_shape = 2
+
+[node name="ToolButtonSizeLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/InterfaceOptions" unique_id=1972884047]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Tool button size:"
+
+[node name="ToolButtonSizeOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/InterfaceOptions" unique_id=651072558]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+selected = 0
+item_count = 2
+popup/item_0/text = "Small"
+popup/item_0/id = 0
+popup/item_1/text = "Big"
+popup/item_1/id = 1
 
 [node name="ScreenOrientationLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/InterfaceOptions" unique_id=1833295930 groups=["MobileOnly"]]
 layout_mode = 2
@@ -246,6 +261,7 @@ text = "Screen orientation:"
 
 [node name="ScreenOrientationOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/InterfaceOptions" unique_id=394327867 groups=["MobileOnly"]]
 layout_mode = 2
+mouse_default_cursor_shape = 2
 selected = 0
 item_count = 3
 popup/item_0/text = "Auto"
@@ -331,76 +347,63 @@ layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
 
-[node name="Themes" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface" unique_id=153560318]
-layout_mode = 2
-script = ExtResource("3_nvl8k")
-
-[node name="ThemeButtons" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/Themes" unique_id=370270642]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="ThemeColors" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/Themes" unique_id=322880514]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 16
-
-[node name="ButtonHeader" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface" unique_id=4954884 groups=["HeaderLabels"]]
-layout_mode = 2
-theme_override_constants/separation = 0
-
-[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonHeader" unique_id=314586079]
-layout_mode = 2
-theme_type_variation = &"HeaderSmall"
-text = "Buttons"
-
-[node name="HSeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonHeader" unique_id=1766494602]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 2
-
-[node name="ButtonOptions" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface" unique_id=1600284949]
+[node name="ThemeOptions" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface" unique_id=17449181]
 layout_mode = 2
 columns = 3
 
-[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonOptions" unique_id=1972884047]
+[node name="ThemePresetLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=2105936984]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Tool button size:"
+text = "Preset:"
 
-[node name="ToolButtonSizeOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonOptions" unique_id=651072558]
+[node name="ThemePresetOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=1980268861]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_default_cursor_shape = 2
-selected = 0
-item_count = 2
-popup/item_0/text = "Small"
-popup/item_0/id = 0
-popup/item_1/text = "Big"
-popup/item_1/id = 1
 
-[node name="Label2" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonOptions" unique_id=250908542]
+[node name="BaseColorLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=1821735562]
 layout_mode = 2
-text = "Icon color from:"
+mouse_filter = 1
+text = "Base color:"
 
-[node name="IconColorOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonOptions" unique_id=990110604]
-layout_mode = 2
-mouse_default_cursor_shape = 2
-selected = 0
-item_count = 2
-popup/item_0/text = "Theme"
-popup/item_0/id = 0
-popup/item_1/text = "Custom"
-popup/item_1/id = 1
-
-[node name="Label3" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonOptions" unique_id=1863691022]
-layout_mode = 2
-text = "Icon color:"
-
-[node name="IconColorButton" type="ColorPickerButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ButtonOptions" unique_id=1048917968]
+[node name="BaseColor" type="ColorPickerButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=779482947]
 custom_minimum_size = Vector2(64, 20)
 layout_mode = 2
 mouse_default_cursor_shape = 2
-color = Color(0.75, 0.75, 0.75, 1)
+color = Color(0.470588, 0.470588, 0.470588, 1)
+
+[node name="AccentColorLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=989334678]
+layout_mode = 2
+mouse_filter = 1
+text = "Accent color:"
+
+[node name="AccentColor" type="ColorPickerButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=1642156326]
+custom_minimum_size = Vector2(64, 20)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+color = Color(0.470588, 0.470588, 0.470588, 1)
+
+[node name="ContrastLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=1267417911]
+layout_mode = 2
+mouse_filter = 1
+text = "Contrast:"
+
+[node name="ContrastSlider" type="TextureProgressBar" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Interface/ThemeOptions" unique_id=1029001160]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+theme_type_variation = &"ValueSlider"
+max_value = 1.0
+step = 0.01
+value = 0.3
+nine_patch_stretch = true
+stretch_margin_left = 3
+stretch_margin_top = 3
+stretch_margin_right = 3
+stretch_margin_bottom = 3
+script = ExtResource("8")
+snap_step = 0.5
 
 [node name="Canvas" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=1561441708]
 visible = false
@@ -520,7 +523,6 @@ text = "Snapping distance:"
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "This is the distance in screen pixels where guide and grid snapping gets activated."
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 min_value = 1.0
@@ -726,7 +728,6 @@ text = "Show at zoom:"
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Sets the minimal zoom at which pixel grid will be shown"
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 min_value = 50.0
@@ -789,7 +790,6 @@ text = "Checker size:"
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Size of the transparent checker background"
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 min_value = 1.0
@@ -872,7 +872,6 @@ text = "Tile mode opacity:"
 [node name="TileModeOpacity" type="TextureProgressBar" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/CheckerOptions" unique_id=1537361059]
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 max_value = 1.0
@@ -885,55 +884,6 @@ stretch_margin_right = 3
 stretch_margin_bottom = 3
 script = ExtResource("8")
 snap_step = 0.1
-
-[node name="BackgroundHeader" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas" unique_id=1147276346 groups=["HeaderLabels"]]
-layout_mode = 2
-theme_override_constants/separation = 0
-
-[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/BackgroundHeader" unique_id=1128383153]
-layout_mode = 2
-theme_type_variation = &"HeaderSmall"
-text = "Background"
-
-[node name="HSeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/BackgroundHeader" unique_id=1790630177]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 2
-
-[node name="BackgroundOptions" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas" unique_id=202912210]
-layout_mode = 2
-theme_override_constants/h_separation = 4
-theme_override_constants/v_separation = 4
-columns = 3
-
-[node name="ColorFromLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/BackgroundOptions" unique_id=1320026830]
-custom_minimum_size = Vector2(110, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 1
-text = "Background color from:"
-
-[node name="ColorOptionButton" type="OptionButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/BackgroundOptions" unique_id=318317743]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_default_cursor_shape = 2
-selected = 0
-item_count = 2
-popup/item_0/text = "Theme"
-popup/item_0/id = 0
-popup/item_1/text = "Custom"
-popup/item_1/id = 1
-
-[node name="ColorLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/BackgroundOptions" unique_id=1530363288]
-layout_mode = 2
-mouse_filter = 1
-text = "Background color:"
-
-[node name="BackgroundColor" type="ColorPickerButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Canvas/BackgroundOptions" unique_id=1003812793]
-custom_minimum_size = Vector2(64, 20)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-color = Color(0.470588, 0.470588, 0.470588, 1)
 
 [node name="Timeline" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=1361637336]
 visible = false
@@ -995,9 +945,39 @@ size_flags_horizontal = 3
 mouse_default_cursor_shape = 2
 color = Color(0, 0, 1, 1)
 
+[node name="LayerLockingUndoableLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Timeline/TimelineOptions" unique_id=1480303644]
+layout_mode = 2
+text = "Layer lock changes undoable"
+
+[node name="LayerLockingUndoableButton" type="CheckBox" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Timeline/TimelineOptions" unique_id=2023726878]
+layout_mode = 2
+text = "On"
+
+[node name="LayerVisibilityUndoableLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Timeline/TimelineOptions" unique_id=429127991]
+layout_mode = 2
+text = "Layer visibility changes undoable"
+
+[node name="LayerVisibilityUndoableButton" type="CheckBox" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Timeline/TimelineOptions" unique_id=1905052006]
+layout_mode = 2
+text = "On"
+
 [node name="Tools" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=718539927]
 visible = false
 layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Tools" unique_id=498939250 groups=["HeaderLabels"]]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Tools/Header" unique_id=1439805257]
+layout_mode = 2
+theme_type_variation = &"HeaderSmall"
+text = "Tools"
+
+[node name="HSeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Tools/Header" unique_id=1704668179]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
 
 [node name="ToolOptions" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Tools" unique_id=508595581]
 layout_mode = 2
@@ -1081,6 +1061,42 @@ size_flags_horizontal = 3
 mouse_default_cursor_shape = 2
 color = Color(0.992157, 0.427451, 0.0784314, 1)
 
+[node name="Palettes" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=1780868494]
+visible = false
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Palettes" unique_id=39203709 groups=["HeaderLabels"]]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Palettes/Header" unique_id=321867047]
+layout_mode = 2
+theme_type_variation = &"HeaderSmall"
+text = "Palettes"
+
+[node name="HSeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Palettes/Header" unique_id=2039465816]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="PaletteOptions" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Palettes" unique_id=613896065]
+layout_mode = 2
+columns = 3
+
+[node name="GlobalPalettesReadonlyLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Palettes/PaletteOptions" unique_id=307136421]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "If this is enabled, global palettes will be readonly and changes to them will be applied on a project wide copy instead."
+mouse_filter = 1
+text = "Make global palettes read-only"
+
+[node name="GlobalPalettesReadonly" type="CheckBox" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Palettes/PaletteOptions" unique_id=1082179765]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "If this is enabled, global palettes will be readonly and changes to them will be applied on a project wide copy instead."
+mouse_default_cursor_shape = 2
+text = "On"
+
 [node name="Selection" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=1692342142]
 visible = false
 layout_mode = 2
@@ -1146,7 +1162,6 @@ text = "Transformation preview alpha:"
 custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 size_flags_horizontal = 3
-focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"ValueSlider"
 max_value = 1.0
@@ -1353,6 +1368,112 @@ size_flags_horizontal = 3
 mouse_default_cursor_shape = 2
 text = "On"
 
+[node name="Attribution" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=1483485289]
+visible = false
+layout_mode = 2
+
+[node name="AuthorHeader" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution" unique_id=633189250 groups=["HeaderLabels"]]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorHeader" unique_id=2101647471]
+layout_mode = 2
+theme_type_variation = &"HeaderSmall"
+text = "Author"
+
+[node name="HSeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorHeader" unique_id=1443319414]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="AuthorContainer" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution" unique_id=1415249693]
+layout_mode = 2
+columns = 3
+
+[node name="DisplayNameLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=778042227]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Sets the limit of the application's frames per second. The lower the number, the lower the CPU usage, but the application gets slower, choppier and unresponsive. 0 means that there is no limit."
+mouse_filter = 1
+text = "Display name:"
+
+[node name="DisplayName" type="LineEdit" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=1417754898]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RealNameLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=959034553]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Sets the limit of the application's frames per second. The lower the number, the lower the CPU usage, but the application gets slower, choppier and unresponsive. 0 means that there is no limit."
+mouse_filter = 1
+text = "Real name:"
+
+[node name="RealName" type="LineEdit" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=849693492]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ContactLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=993045809]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Sets the limit of the application's frames per second. The lower the number, the lower the CPU usage, but the application gets slower, choppier and unresponsive. 0 means that there is no limit."
+mouse_filter = 1
+text = "Contact:"
+
+[node name="Contact" type="LineEdit" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=1879197820]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CompanyStudioLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=326685751]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Sets the limit of the application's frames per second. The lower the number, the lower the CPU usage, but the application gets slower, choppier and unresponsive. 0 means that there is no limit."
+mouse_filter = 1
+text = "Company/Studio:"
+
+[node name="CompanyStudio" type="LineEdit" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/AuthorContainer" unique_id=1643027864]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LicenseHeader" type="HBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution" unique_id=824309673 groups=["HeaderLabels"]]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseHeader" unique_id=1494019910]
+layout_mode = 2
+theme_type_variation = &"HeaderSmall"
+text = "Default license"
+
+[node name="HSeparator" type="HSeparator" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseHeader" unique_id=134067768]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="LicenseProperties" type="GridContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution" unique_id=1970728459]
+layout_mode = 2
+columns = 3
+script = ExtResource("8_praud")
+
+[node name="LicenseLabel" type="Label" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseProperties" unique_id=607807999]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Type:"
+
+[node name="LicenceName" type="LineEdit" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseProperties" unique_id=1932956567]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Spacer" type="Control" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseProperties" unique_id=1425950916]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Spacer2" type="Control" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseProperties" unique_id=620550166]
+layout_mode = 2
+
+[node name="PresetOptions" type="MenuButton" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Attribution/LicenseProperties" unique_id=672159092]
+layout_mode = 2
+text = "Choose from presets"
+flat = false
+
 [node name="Drivers" type="VBoxContainer" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide" unique_id=1209566191]
 visible = false
 layout_mode = 2
@@ -1441,7 +1562,7 @@ mouse_default_cursor_shape = 2
 disabled = true
 text = "Uninstall"
 
-[node name="OpenFolderButton" type="Button" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Extensions/HBoxContainer" unique_id=1324879976]
+[node name="OpenFolderButton" type="Button" parent="HSplitContainer/VBoxContainer/ScrollContainer/RightSide/Extensions/HBoxContainer" unique_id=1324879976 groups=["DesktopOnly"]]
 layout_mode = 2
 mouse_default_cursor_shape = 2
 text = "Open Folder"
@@ -1695,7 +1816,6 @@ text = "Pixelorama must be restarted for changes to take effect."
 mode = 1
 title = "Open File(s)"
 size = Vector2i(560, 400)
-always_on_top = true
 ok_button_text = "Open"
 file_mode = 1
 access = 2
@@ -1703,11 +1823,9 @@ filters = PackedStringArray("*.pck ; Godot Resource Pack File", "*.zip")
 show_hidden_files = true
 
 [node name="ExtensionExplorer" parent="." unique_id=523014809 instance=ExtResource("8_jmnx8")]
-transient = true
 
 [node name="EnableExtensionConfirmation" type="ConfirmationDialog" parent="." unique_id=1187640624]
 unique_name_in_owner = true
-always_on_top = true
 dialog_text = "Are you sure you want to enable this extension? Make sure to only enable extensions from sources that you trust."
 dialog_autowrap = true
 
@@ -1715,13 +1833,11 @@ dialog_autowrap = true
 unique_name_in_owner = true
 position = Vector2i(0, 36)
 size = Vector2i(400, 100)
-always_on_top = true
 ok_button_text = "Delete Permanently"
 dialog_text = "Are you sure you want to delete this extension?"
 dialog_autowrap = true
 
 [node name="ResetOptionsConfirmation" type="ConfirmationDialog" parent="." unique_id=1646743103]
-always_on_top = true
 dialog_text = "Are you sure you want to reset the selected options? There will be no way to undo this."
 
 [connection signal="about_to_popup" from="." to="." method="_on_PreferencesDialog_about_to_show"]

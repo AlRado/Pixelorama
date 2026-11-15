@@ -63,6 +63,7 @@ static func open_aseprite_file(path: String) -> void:
 	var project_size := Vector2i(project_width, project_height)
 	var new_project := Project.new([], path.get_file().get_basename(), project_size)
 	new_project.fps = 1.0
+	new_project.clear_attribution_data()
 	var color_depth := ase_file.get_16()
 	var image_format := Image.FORMAT_RGBA8
 	var pixel_byte := 4
@@ -110,16 +111,8 @@ static func open_aseprite_file(path: String) -> void:
 			var chunk_type := ase_file.get_16()
 			if chunk_type != 0x2020:
 				previous_chunk_type = chunk_type
+			prints("Found Chunk:", chunk_type, "(", ChunkTypes.find_key(chunk_type), ")")
 			match chunk_type:
-				ChunkTypes.OLD_PALETTE_1, ChunkTypes.OLD_PALETTE_2:
-					var n_of_packets := ase_file.get_16()
-					for packet in n_of_packets:
-						var _n_entries_skip := ase_file.get_8()
-						var _n_of_colors := ase_file.get_8()
-						for color in number_of_colors:
-							var _red := ase_file.get_8()
-							var _green := ase_file.get_8()
-							var _blue := ase_file.get_8()
 				ChunkTypes.LAYER:
 					var layer_flags := ase_file.get_16()
 					var layer_type := ase_file.get_16()
@@ -160,7 +153,7 @@ static func open_aseprite_file(path: String) -> void:
 					var y_pos := ase_file.get_16()
 					cel.opacity = ase_file.get_8() / 255.0
 					var cel_type := ase_file.get_16()
-					cel.z_index = ase_file.get_16()
+					cel.z_index = unsigned16_to_signed(ase_file.get_16())
 					ase_file.get_buffer(5)  # For future
 					if cel_type == 0 or cel_type == 2:  # Raw uncompressed and compressed image
 						var width := ase_file.get_16()
@@ -236,7 +229,9 @@ static func open_aseprite_file(path: String) -> void:
 								var flip_h := transformed_bit & 128 == 128
 								var flip_v := transformed_bit & 64 == 64
 								var transpose := transformed_bit & 32 == 32
-								tilemap_cel.set_index(cell, cell_index, flip_h, flip_v, transpose)
+								tilemap_cel.set_index(
+									cell, cell_index, false, flip_h, flip_v, transpose
+								)
 
 					# Add in-between GroupCels, if there are any.
 					# This is needed because Aseprite's group cels do not store any data
@@ -298,7 +293,6 @@ static func open_aseprite_file(path: String) -> void:
 						var tag := AnimationTag.new(text, Color.WHITE, from_frame + 1, to_frame + 1)
 						new_project.animation_tags.append(tag)
 				ChunkTypes.PALETTE:
-					# TODO: Import palettes into Pixelorama once we support project palettes
 					var _palette_size := ase_file.get_32()
 					var first_index_to_change := ase_file.get_32()
 					var last_index_to_change := ase_file.get_32()
@@ -313,6 +307,25 @@ static func open_aseprite_file(path: String) -> void:
 						colors.append(Color.from_rgba8(red, green, blue, alpha))
 						if flags & 1 == 1:
 							var _name := parse_aseprite_string(ase_file)
+					var palette_name := "Imported Palette %s" % palettes.size()
+					var correct_name := Palettes.get_valid_name(palette_name, new_project)
+					var palette := Palettes.fill_imported_palette_with_colors(correct_name, colors)
+					palette.is_project_palette = true
+					palettes[correct_name] = palette
+					project_current_palette_name = correct_name
+				ChunkTypes.OLD_PALETTE_1, ChunkTypes.OLD_PALETTE_2:
+					# NOTE: Aseprite still uses ChunkTypes.OLD_PALETTE_1 in newwe versions in order
+					# to store small palettes (which don't contain alpha)
+					var n_of_packets := ase_file.get_16()
+					var colors: PackedColorArray
+					for packet in n_of_packets:
+						var _n_entries_skip := ase_file.get_8()
+						var _n_of_colors := ase_file.get_8()
+						for color in number_of_colors:
+							var red := ase_file.get_8()
+							var green := ase_file.get_8()
+							var blue := ase_file.get_8()
+							colors.append(Color.from_rgba8(red, green, blue))
 					var palette_name := "Imported Palette %s" % palettes.size()
 					var correct_name := Palettes.get_valid_name(palette_name, new_project)
 					var palette := Palettes.fill_imported_palette_with_colors(correct_name, colors)
@@ -449,12 +462,11 @@ static func open_aseprite_file(path: String) -> void:
 	organize_layer_child_levels(new_project)
 	new_project.order_layers()
 	new_project.save_path = path.get_basename() + ".pxo"
-	new_project.file_name = new_project.name
+	new_project.export_profile.file_name = new_project.name
 	new_project.palettes = palettes
 	new_project.project_current_palette_name = project_current_palette_name
 	Global.projects.append(new_project)
 	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
 
 
 static func parse_aseprite_string(ase_file: FileAccess) -> String:
@@ -573,3 +585,9 @@ static func organize_layer_child_levels(project: Project) -> void:
 		var layer := project.layers[i]
 		layer.remove_meta(&"layer_child_level")
 		layer.index = i
+
+
+static func unsigned16_to_signed(unsigned) -> int:
+	const MAX_15B = 1 << 15
+	const MAX_16B = 1 << 16
+	return (unsigned + MAX_15B) % MAX_16B - MAX_15B

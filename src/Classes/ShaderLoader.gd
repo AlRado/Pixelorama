@@ -2,9 +2,13 @@ class_name ShaderLoader
 extends RefCounted
 
 const VALUE_SLIDER_V2_TSCN := preload("res://src/UI/Nodes/Sliders/ValueSliderV2.tscn")
+const VALUE_SLIDER_V3_TSCN := preload("res://src/UI/Nodes/Sliders/ValueSliderV3.tscn")
 const BASIS_SLIDERS_TSCN := preload("res://src/UI/Nodes/Sliders/BasisSliders.tscn")
 const GRADIENT_EDIT_TSCN := preload("res://src/UI/Nodes/GradientEdit.tscn")
 const NOISE_GENERATOR := preload("res://src/UI/Nodes/NoiseGeneratorDialog.tscn")
+const UNIFORMS_TO_IGNORE: Array[String] = [
+	"PXO_time", "PXO_frame_index", "PXO_layer_index", "source_texture0"
+]
 
 static var dither_matrices: Array[DitherMatrix] = [
 	DitherMatrix.new(preload("res://assets/dither-matrices/bayer2.png"), "Bayer 2x2"),
@@ -23,6 +27,11 @@ class DitherMatrix:
 		name = _name
 
 
+class ShaderMetadata:
+	var uniforms: PackedStringArray = []
+	var description: String = ""
+
+
 static func load_dither_matrix_from_file(file_path: String) -> void:
 	var dither_image := Image.load_from_file(file_path)
 	if is_instance_valid(dither_image):
@@ -34,44 +43,24 @@ static func load_dither_matrix_from_file(file_path: String) -> void:
 static func create_ui_for_shader_uniforms(
 	shader: Shader,
 	params: Dictionary,
+	param_properties: Dictionary,
 	parent_node: Control,
 	value_changed: Callable,
 	file_selected: Callable
 ) -> void:
 	var code := shader.code.split("\n")
-	var uniforms: PackedStringArray = []
-	var uniform_data: PackedStringArray = []
-	var description: String = ""
-	var description_began := false
-	# A Dictionary used to group together nodes
-	# under the same group_uniform. Currently only used for CurveTextures.
-	var group_nodes: Dictionary[String, Control] = {}
-	var color_button_hbox: HBoxContainer = null  # Used for RGBA buttons, if they exist.
-	for line in code:
-		# Management of "end" tags
-		if line.begins_with("// (end DESCRIPTION)"):
-			description_began = false
-		if description_began:
-			description += "\n" + line.strip_edges()
-
-		# Detection of uniforms
-		if line.begins_with("uniform") or line.begins_with("group_uniforms"):
-			uniforms.append(line)
-		if line.begins_with("// uniform_data"):
-			uniform_data.append(line)
-
-		# Management of "begin" tags
-		elif line.begins_with("// (begin DESCRIPTION)"):
-			description_began = true
-	# Validation of begin/end tags
-	if description_began == true:  # Description started but never ended. treat it as an error
-		print("Shader description started but never finished. Assuming empty description")
-		description = ""
+	var shader_metadata := get_shader_metadata(code)
+	var uniforms := shader_metadata.uniforms
+	var description := shader_metadata.description
 	if not description.is_empty():
 		parent_node.tooltip_text = str(
 			"Description:\n", description.replace("//", "").strip_edges()
 		)
 
+	# A Dictionary used to group together nodes
+	# under the same group_uniform. Currently only used for CurveTextures.
+	var group_nodes: Dictionary[String, Control] = {}
+	var color_button_hbox: HBoxContainer = null  # Used for RGBA buttons, if they exist.
 	var current_group := ""
 	for uniform in uniforms:
 		# Example uniform:
@@ -96,23 +85,8 @@ static func create_ui_for_shader_uniforms(
 			continue
 		var u_type := u_init[1]
 		var u_name := u_init[2]
-		if u_name in ["PXO_time", "PXO_frame_index", "PXO_layer_index"]:
+		if u_name in UNIFORMS_TO_IGNORE:
 			continue
-		# Find custom data of the uniform, if any exists
-		# Right now it only checks if a uniform should have another type of node
-		# Such as integers having OptionButtons
-		# But in the future it could be expanded to include custom names or descriptions.
-		var custom_data: PackedStringArray = []
-		var type_override := ""
-		for data in uniform_data:
-			if u_name in data:
-				var line_to_examine := data.split(" ")
-				if line_to_examine[3] == "type::":
-					var temp_splitter := data.split("::")
-					if temp_splitter.size() > 1:
-						type_override = temp_splitter[1].strip_edges()
-
-				custom_data.append(data)
 		var humanized_u_name := Keychain.humanize_snake_case(u_name) + ":"
 
 		if u_type == "float" or u_type == "int":
@@ -121,104 +95,59 @@ static func create_ui_for_shader_uniforms(
 			label.text = humanized_u_name
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			hbox.add_child(label)
-			if type_override.begins_with("OptionButton"):
-				var option_button := OptionButton.new()
-				option_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				option_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-				option_button.item_selected.connect(value_changed.bind(u_name))
-				var items := (
-					type_override
-					. replace("OptionButton ", "")
-					. replace("[", "")
-					. replace("]", "")
-					. split("||")
-				)
-				for item in items:
-					option_button.add_item(item)
+			var value := 0.0
+			if u_type == "float":
 				if u_value != "":
-					option_button.select(int(u_value))
-				if params.has(u_name):
-					option_button.select(params[u_name])
-				else:
-					params[u_name] = option_button.selected
-				hbox.add_child(option_button)
+					value = float(u_value)
 			else:
-				var slider := ValueSlider.new()
-				slider.allow_greater = true
-				slider.allow_lesser = true
-				slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var min_value := 0.0
-				var max_value := 255.0
-				var step := 1.0
-				var value := 0.0
-				var range_values_array: PackedStringArray
-				if "hint_range" in u_hint:
-					var range_values: String = u_hint.replace("hint_range(", "")
-					range_values = range_values.replace(")", "").strip_edges()
-					range_values_array = range_values.split(",")
-
-				if u_type == "float":
-					if range_values_array.size() >= 1:
-						min_value = float(range_values_array[0])
-					else:
-						min_value = 0.01
-
-					if range_values_array.size() >= 2:
-						max_value = float(range_values_array[1])
-
-					if range_values_array.size() >= 3:
-						step = float(range_values_array[2])
-					else:
-						step = 0.01
-
-					if u_value != "":
-						value = float(u_value)
+				if u_value != "":
+					value = int(u_value)
+			var editor_node := Global.create_node_from_variable(
+				value, value_changed.bind(u_name), param_properties[u_name]
+			)
+			if editor_node is ValueSlider:
+				editor_node.allow_greater = true
+				editor_node.allow_lesser = true
+			editor_node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			editor_node.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			if params.has(u_name):
+				if editor_node is OptionButton:
+					editor_node.select(params[u_name])
 				else:
-					if range_values_array.size() >= 1:
-						min_value = int(range_values_array[0])
-
-					if range_values_array.size() >= 2:
-						max_value = int(range_values_array[1])
-
-					if range_values_array.size() >= 3:
-						step = int(range_values_array[2])
-
-					if u_value != "":
-						value = int(u_value)
-				slider.min_value = min_value
-				slider.max_value = max_value
-				slider.step = step
-				slider.value = value
-				if params.has(u_name):
-					slider.value = params[u_name]
+					editor_node.value = params[u_name]
+			else:
+				if editor_node is OptionButton:
+					params[u_name] = editor_node.selected
 				else:
-					params[u_name] = slider.value
-				slider.value_changed.connect(value_changed.bind(u_name))
-				slider.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-				hbox.add_child(slider)
+					params[u_name] = editor_node.value
+			hbox.add_child(editor_node)
 			parent_node.add_child(hbox)
 		elif u_type == "vec2" or u_type == "ivec2" or u_type == "uvec2":
 			var label := Label.new()
 			label.text = humanized_u_name
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			var vector2 := _vec2str_to_vector2(u_value)
-			var slider := VALUE_SLIDER_V2_TSCN.instantiate() as ValueSliderV2
+			var value := _vec2str_to_vector2(u_value)
+			var slider := Global.create_node_from_variable(
+				value, value_changed.bind(u_name), param_properties[u_name]
+			)
 			slider.show_ratio = true
 			slider.allow_greater = true
 			if u_type != "uvec2":
 				slider.allow_lesser = true
-				if u_type != "ivec2":
-					slider.step = 0.01
+			if u_type == "ivec2":
+				slider.step = 1
 			slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			slider.value = vector2
 			if params.has(u_name):
 				slider.value = params[u_name]
 			else:
 				params[u_name] = slider.value
-			slider.value_changed.connect(value_changed.bind(u_name))
 			var hbox := HBoxContainer.new()
 			hbox.add_child(label)
-			hbox.add_child(slider)
+			var vbox := VBoxContainer.new()
+			vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			hbox.add_child(vbox)
+			vbox.add_child(slider)
+			vbox.add_child(HSeparator.new())
 			parent_node.add_child(hbox)
 		elif u_type == "vec4":
 			if "source_color" in u_hint:
@@ -454,6 +383,101 @@ static func create_ui_for_shader_uniforms(
 			button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 
+static func get_shader_metadata(shader_code: PackedStringArray) -> ShaderMetadata:
+	var shader_metadata := ShaderMetadata.new()
+	var description_began := false
+	for line in shader_code:
+		if line.begins_with("// @"):
+			line = line.replace("// @", "")
+		if line.begins_with("// (end DESCRIPTION)"):
+			description_began = false
+		if description_began:
+			shader_metadata.description += "\n" + line.strip_edges()
+		if line.begins_with("uniform") or line.begins_with("group_uniforms"):
+			shader_metadata.uniforms.append(line)
+		elif line.begins_with("// (begin DESCRIPTION)"):
+			description_began = true
+
+	# Validation of begin/end tags
+	if description_began == true:  # Description started but never ended. treat it as an error
+		print("Shader description started but never finished. Assuming empty description")
+		shader_metadata.description = ""
+	return shader_metadata
+
+
+static func generate_texture_blit_shader(shader_inc: ShaderInclude) -> Shader:
+	var code := shader_inc.code.split("\n")
+	var shader_metadata := get_shader_metadata(code)
+	var uniform_declarations := ""
+	var uniform_names := ""
+	for uniform in shader_metadata.uniforms:
+		uniform_declarations += uniform + "\n"
+		var uniform_split := uniform.split("=")
+		var u_left_side := uniform_split[0].split(":")
+		var u_init := u_left_side[0].split(" ")
+		var uniform_string := u_init[0]
+		if uniform_string == "group_uniforms":
+			continue
+		var u_name := u_init[2].replace(";", "")
+		uniform_names += ", " + u_name
+	var shader_code := (
+		"""
+shader_type texture_blit;
+render_mode blend_disabled;
+
+#include "%s"
+
+uniform sampler2D source_texture0 : hint_blit_source0, filter_nearest;
+uniform sampler2D selection : filter_nearest, repeat_disable;
+%s
+
+void blit() {
+    COLOR0 = apply_effect(source_texture0, UV, selection%s);
+}
+	"""
+		% [shader_inc.resource_path, uniform_declarations, uniform_names]
+	)
+	var shader := Shader.new()
+	shader.code = shader_code
+	return shader
+
+
+static func generate_canvas_item_shader(shader_inc: ShaderInclude) -> Shader:
+	var code := shader_inc.code.split("\n")
+	var shader_metadata := get_shader_metadata(code)
+	var uniform_declarations := ""
+	var uniform_names := ""
+	for uniform in shader_metadata.uniforms:
+		uniform_declarations += uniform + "\n"
+		var uniform_split := uniform.split("=")
+		var u_left_side := uniform_split[0].split(":")
+		var u_init := u_left_side[0].split(" ")
+		var uniform_string := u_init[0]
+		if uniform_string == "group_uniforms":
+			continue
+		var u_name := u_init[2].replace(";", "")
+		uniform_names += ", " + u_name
+	var shader_code := (
+		"""
+shader_type canvas_item;
+render_mode unshaded;
+
+#include "%s"
+
+uniform sampler2D selection : filter_nearest;
+%s
+
+void fragment() {
+    COLOR = apply_effect(TEXTURE, UV, selection%s);
+}
+	"""
+		% [shader_inc.resource_path, uniform_declarations, uniform_names]
+	)
+	var shader := Shader.new()
+	shader.code = shader_code
+	return shader
+
+
 static func _vec2str_to_vector2(vec2: String) -> Vector2:
 	vec2 = vec2.replace("uvec2", "vec2")
 	vec2 = vec2.replace("ivec2", "vec2")
@@ -554,7 +578,7 @@ static func _create_simple_texture_ui(
 	mod_button.text = "Modify"
 	mod_button.pressed.connect(
 		func():
-			_modify_texture_resource(
+			modify_texture_resource(
 				_get_loaded_texture(params, u_name),
 				u_name,
 				_shader_update_texture.bind(value_changed, u_name)
@@ -670,14 +694,7 @@ static func _shader_update_texture(
 		Global.popup_error(warnings)
 
 
-static func _modify_texture_resource(
+static func modify_texture_resource(
 	image: Image, resource_name: StringName, update_callable: Callable
 ) -> void:
-	var resource_proj := ResourceProject.new([], resource_name, image.get_size())
-	resource_proj.layers.append(PixelLayer.new(resource_proj))
-	resource_proj.frames.append(resource_proj.new_empty_frame())
-	resource_proj.frames[0].cels[0].set_content(image)
-	resource_proj.resource_updated.connect(update_callable)
-	Global.projects.append(resource_proj)
-	Global.tabs.current_tab = Global.tabs.get_tab_count() - 1
-	Global.canvas.camera_zoom()
+	ResourceProject.instantiate(resource_name, update_callable, image)

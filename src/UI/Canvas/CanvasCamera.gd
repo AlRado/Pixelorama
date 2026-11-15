@@ -41,6 +41,7 @@ var drag := false
 var rotation_slider: ValueSlider
 var zoom_slider: ValueSlider
 var should_tween := true
+var auto_release_gui_focus := true
 
 @onready var viewport := get_viewport()
 
@@ -63,7 +64,7 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not DisplayServer.is_touchscreen_available():
+	if not DisplayServer.is_touchscreen_available() and auto_release_gui_focus:
 		get_window().gui_release_focus()
 	if !Global.can_draw:
 		drag = false
@@ -95,7 +96,12 @@ func _input(event: InputEvent) -> void:
 			update_transparent_checker_offset()
 	else:
 		var dir := Input.get_vector(&"camera_left", &"camera_right", &"camera_up", &"camera_down")
-		if dir != Vector2.ZERO and !_has_selection_tool():
+		var root := get_tree().current_scene
+		if (
+			dir != Vector2.ZERO
+			and not Tools.selection_tool_has_selection()
+			and not root.is_writing_text
+		):
 			offset = offset + (dir.rotated(camera_angle) / zoom) * CAMERA_SPEED_RATE
 
 
@@ -109,7 +115,10 @@ func zoom_camera(dir: float, event_pos := mouse_pos) -> void:
 		var zoom_margin := zoom * dir / 5
 		var new_zoom := zoom + zoom_margin
 		if Global.integer_zoom:
-			new_zoom = (zoom + Vector2.ONE * dir).floor()
+			if dir < 0:
+				new_zoom = new_zoom.floor()
+			else:
+				new_zoom = new_zoom.ceil()
 		if new_zoom < zoom_in_max && new_zoom > zoom_out_max:
 			var new_offset := (
 				offset
@@ -125,10 +134,13 @@ func zoom_camera(dir: float, event_pos := mouse_pos) -> void:
 	else:
 		var prev_zoom := zoom
 		var zoom_margin := zoom * dir / 10
-		if Global.integer_zoom:
-			zoom_margin = (Vector2.ONE * dir).floor()
 		if zoom + zoom_margin <= zoom_in_max:
 			zoom += zoom_margin
+		if Global.integer_zoom:
+			if dir < 0:
+				zoom = zoom.floor()
+			else:
+				zoom = zoom.ceil()
 		if zoom < zoom_out_max:
 			if Global.integer_zoom:
 				zoom = Vector2.ONE
@@ -235,15 +247,6 @@ func _rotation_slider_value_changed(value: float) -> void:
 	var canvas_center: Vector2 = Global.current_project.size / 2
 	offset = (offset - canvas_center).rotated(difference) + canvas_center
 	camera_angle = angle
-
-
-func _has_selection_tool() -> bool:
-	if not Global.current_project.has_selection:
-		return false
-	for slot in Tools._slots.values():
-		if slot.tool_node is BaseSelectionTool:
-			return true
-	return false
 
 
 func _project_switched() -> void:
