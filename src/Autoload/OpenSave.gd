@@ -215,7 +215,8 @@ func handle_loading_image(file: String, image: Image, force_import_dialog := fal
 ## For loading the output of AImgIO as a project
 func handle_loading_aimg(path: String, frames: Array) -> void:
 	var project := Project.new([], path.uri_decode().get_file(), frames[0].content.get_size())
-	project.layers.append(PixelLayer.new(project))
+	var layer := PixelLayer.new(project)
+	project.layers.append(layer)
 	Global.projects.append(project)
 
 	# Determine FPS as 1, unless all frames agree.
@@ -237,9 +238,7 @@ func handle_loading_aimg(path: String, frames: Array) -> void:
 			frame.set_duration_in_seconds(aimg_frame.duration, project.fps)
 		var content := aimg_frame.content
 		content.convert(project.get_image_format())
-		var image_extended := ImageExtended.new()
-		image_extended.copy_from_custom(content)
-		frame.cels.append(PixelCel.new(image_extended, 1))
+		frame.cels.append(layer.new_cel_from_image(content))
 		project.frames.append(frame)
 
 	set_new_imported_tab(project, path)
@@ -475,9 +474,7 @@ func open_v0_pxo_file(path: String, empty_project: bool) -> Project:
 	return new_project
 
 
-func save_pxo_file(
-	path: String, autosave: bool, include_blended := false, project := Global.current_project
-) -> bool:
+func save_pxo_file(path: String, autosave: bool, project := Global.current_project) -> bool:
 	project.initialize_attribution_data()
 	if not autosave:
 		project.name = path.uri_decode().get_file().trim_suffix(".pxo")
@@ -540,7 +537,7 @@ func save_pxo_file(
 
 	var frame_index := 1
 	for frame in project.frames:
-		if not autosave and include_blended:
+		if not autosave and project.include_blended_images:
 			var blended := project.new_empty_image()
 			if frame == current_frame:
 				blended = preview
@@ -571,9 +568,10 @@ func save_pxo_file(
 		brush_index += 1
 	for i in project.reference_images.size():
 		var reference_image := project.reference_images[i]
-		zip_packer.start_file("image_data/reference_images/reference_%s" % i)
-		zip_packer.write_file(reference_image.texture.get_image().get_data())
-		zip_packer.close_file()
+		if reference_image.texture:
+			zip_packer.start_file("image_data/reference_images/reference_%s" % i)
+			zip_packer.write_file(reference_image.texture.get_image().get_data())
+			zip_packer.close_file()
 	if project.tiles.has_mask:
 		zip_packer.start_file("image_data/tile_map")
 		zip_packer.write_file(project.tiles.tile_mask.get_data())
@@ -667,7 +665,9 @@ func open_image_as_new_tab(path: String, image: Image) -> void:
 
 	var frame := Frame.new()
 	image.convert(project.get_image_format())
-	frame.cels.append(layer.new_cel_from_image(image))
+	var cel := layer.new_cel_from_image(image)
+	cel.shrink_to_content()
+	frame.cels.append(cel)
 
 	project.frames.append(frame)
 	set_new_imported_tab(project, path)
@@ -691,7 +691,9 @@ func open_image_as_spritesheet_tab_smart(
 		)
 		image.convert(project.get_image_format())
 		cropped_image.blit_rect(image, rect, offset)
-		frame.cels.append(layer.new_cel_from_image(cropped_image))
+		var cel := layer.new_cel_from_image(cropped_image)
+		cel.shrink_to_content()
+		frame.cels.append(cel)
 		project.frames.append(frame)
 	set_new_imported_tab(project, path)
 
@@ -718,7 +720,9 @@ func open_image_as_spritesheet_tab(
 			var frame := Frame.new()
 			project.size = cropped_image.get_size()
 			cropped_image.convert(project.get_image_format())
-			frame.cels.append(layer.new_cel_from_image(cropped_image))
+			var cel := layer.new_cel_from_image(cropped_image)
+			cel.shrink_to_content()
+			frame.cels.append(cel)
 			project.frames.append(frame)
 	set_new_imported_tab(project, path)
 
@@ -756,7 +760,9 @@ func open_image_as_spritesheet_layer_smart(
 				project_width, project_height, false, project.get_image_format()
 			)
 			cropped_image.blit_rect(image, sliced_rects[f - start_frame], offset)
-			cels.append(layer.new_cel_from_image(cropped_image))
+			var cel := layer.new_cel_from_image(cropped_image)
+			cel.shrink_to_content()
+			cels.append(cel)
 		else:
 			cels.append(layer.new_empty_cel())
 		# If amount of cels exceede our project frames, then add new frame
@@ -845,7 +851,9 @@ func open_image_as_spritesheet_layer(
 			if not detect_empty:
 				if cropped_image.get_used_rect().size == Vector2i.ZERO:
 					continue  # We don't need this cel
-			cels.append(layer.new_cel_from_image(cropped_image))
+			var cel := layer.new_cel_from_image(cropped_image)
+			cel.shrink_to_content()
+			cels.append(cel)
 		else:
 			cels.append(layer.new_empty_cel())
 		# If amount of cels exceede our project frames, then add new frame
@@ -902,9 +910,8 @@ func open_image_at_cel(image: Image, layer_index := 0, frame_index := 0) -> void
 	if cel is CelTileMap:
 		undo_data[cel] = (cel as CelTileMap).serialize_undo_data()
 	cel_image.add_data_to_dictionary(undo_data)
-	cel_image.fill(0)
-	cel_image.blit_rect(image, Rect2i(Vector2i.ZERO, image.get_size()), Vector2i.ZERO)
-	cel_image.convert_rgb_to_indexed()
+	cel_image.copy_from_custom(image)
+	cel.shrink_to_content()
 	var redo_data := {}
 	if cel is CelTileMap:
 		(cel as CelTileMap).update_tilemap()
@@ -938,11 +945,9 @@ func open_image_as_new_frame(
 		var layer := project.layers[i]
 		if i == layer_index and layer is PixelLayer:
 			image.convert(project.get_image_format())
-			var cel_image := Image.create(
-				project_width, project_height, false, project.get_image_format()
-			)
-			cel_image.blit_rect(image, Rect2i(Vector2i.ZERO, image.get_size()), Vector2i.ZERO)
-			frame.cels.append(layer.new_cel_from_image(cel_image))
+			var cel := (layer as PixelLayer).new_cel_from_image(image)
+			cel.shrink_to_content()
+			frame.cels.append(cel)
 		else:
 			frame.cels.append(project.layers[i].new_empty_cel())
 	if not undo:
@@ -974,11 +979,9 @@ func open_image_as_new_layer(image: Image, file_name: String, frame_index := 0) 
 	for i in project.frames.size():
 		if i == frame_index:
 			image.convert(project.get_image_format())
-			var cel_image := Image.create(
-				project_width, project_height, false, project.get_image_format()
-			)
-			cel_image.blit_rect(image, Rect2i(Vector2i.ZERO, image.get_size()), Vector2i.ZERO)
-			cels.append(layer.new_cel_from_image(cel_image))
+			var cel := layer.new_cel_from_image(image)
+			cel.shrink_to_content()
+			cels.append(cel)
 		else:
 			cels.append(layer.new_empty_cel())
 
@@ -1151,7 +1154,6 @@ func open_gif_file(path: String) -> bool:
 	new_project.layers.append(layer)
 	for gif_frame in imported_frames:
 		var frame_image := gif_frame.image
-		frame_image.crop(new_project.size.x, new_project.size.y)
 		var cel := layer.new_cel_from_image(frame_image)
 		var delay := gif_frame.delay
 		if delay <= 0.0:
@@ -1256,14 +1258,14 @@ func open_ora_file(path: String) -> void:
 				# Create cel
 				var cel := layer.new_empty_cel()
 				if cel is PixelCel:
+					var image_x := int(parser.get_named_attribute_value("x"))
+					var image_y := int(parser.get_named_attribute_value("y"))
+					cel.offset = Vector2i(image_x, image_y)
 					var image_path := parser.get_named_attribute_value_safe("src")
 					var image_data := zip_reader.read_file(image_path)
 					var image := Image.new()
 					image.load_png_from_buffer(image_data)
-					var image_rect := Rect2i(Vector2i.ZERO, image.get_size())
-					var image_x := int(parser.get_named_attribute_value("x"))
-					var image_y := int(parser.get_named_attribute_value("y"))
-					cel.get_image().blit_rect(image, image_rect, Vector2i(image_x, image_y))
+					cel.get_image().copy_from_custom(image)
 				new_project.frames[0].cels.insert(0, cel)
 		elif parser.get_node_type() == XMLParser.NODE_ELEMENT_END:
 			var node_name := parser.get_node_name()
@@ -1359,7 +1361,7 @@ func _on_Autosave_timeout() -> void:
 			))
 		if not DirAccess.dir_exists_absolute(current_session_backup):
 			DirAccess.make_dir_recursive_absolute(current_session_backup)
-		save_pxo_file(project.backup_path, true, false, project)
+		save_pxo_file(project.backup_path, true, project)
 
 
 func save_project_to_recent_list(path: String) -> void:
