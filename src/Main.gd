@@ -54,6 +54,7 @@ class CLI:
 		["--output", "-o"]: [CLI.set_output, "[path] Name of output file (with extension)"],
 		["--scale"]: [CLI.set_export_scale, "[integer] Scales up the export image by a number"],
 		["--frames", "-f"]: [CLI.set_frames, "[integer-integer] Used to specify frame range"],
+		["--tag", "-t"]: [CLI.set_tag, "[string] Used to specify which tag to export"],
 		["--direction", "-d"]: [CLI.set_direction, "[0, 1, 2] Specifies direction"],
 		["--json"]: [CLI.set_json, "Export the JSON data of the project"],
 		["--split-layers"]: [CLI.set_split_layers, "Each layer exports separately"],
@@ -62,6 +63,10 @@ class CLI:
 			CLI.set_sheet_layers_as_separate_files,
 			"Spritesheets in split layer mode will export multiple files for each layer."
 		],
+		["--layer-index"]:
+		[CLI.set_layer_index, "[integer] Used to specify which layer to export by index"],
+		["--layer-name"]:
+		[CLI.set_layer_name, "[string] Used to specify which layer to export by name"],
 		["--help", "-h", "-?"]: [CLI.generate_help, "Displays this help page"],
 		["--scene"]: [CLI.dummy, "Used internally by Godot."]
 	}
@@ -127,7 +132,7 @@ some useful [b][SYSTEM OPTIONS][/b] are:
 
 	static func set_output(project: Project, next_arg: String) -> void:
 		if not next_arg.is_empty():
-			project.file_name = next_arg.get_file().get_basename()
+			project.export_profile.file_name = next_arg.get_file().get_basename()
 			var directory_path = next_arg.get_base_dir()
 			if directory_path != ".":
 				project.export_profile.directory_path = directory_path
@@ -165,6 +170,16 @@ some useful [b][SYSTEM OPTIONS][/b] are:
 				project.change_cel(frame_number)
 				export_profile.frame_current_tag = Export.ExportFrames.SELECTED_FRAMES
 
+	static func set_tag(project: Project, next_arg: String) -> void:
+		if not next_arg.is_empty():
+			var tag_name = next_arg
+			var export_profile := project.export_profile
+			var tag_index = project.animation_tags.find_custom(
+				func(tag): return tag.name == tag_name
+			)
+			if tag_index != -1:
+				export_profile.frame_current_tag = tag_index + Export.ExportFrames.size()
+
 	static func set_direction(project: Project, next_arg: String) -> void:
 		var export_profile := project.export_profile
 		if not next_arg.is_empty():
@@ -188,6 +203,21 @@ some useful [b][SYSTEM OPTIONS][/b] are:
 
 	static func set_sheet_layers_as_separate_files(project: Project, _next_arg: String) -> void:
 		project.export_profile.sheet_layers_as_separate_files = true
+
+	static func set_layer_name(project: Project, next_arg: String) -> void:
+		if not next_arg.is_empty():
+			var layer_name = next_arg
+			var layer_index = project.layers.find_custom(
+				func(layer): return layer.name == layer_name
+			)
+			if layer_index != -1:
+				project.export_profile.export_layers = layer_index + 2
+
+	static func set_layer_index(project: Project, next_arg: String) -> void:
+		if not next_arg.is_empty() and next_arg.is_valid_int():
+			var layer_index = next_arg.to_int() - 1
+			if layer_index >= 0 and layer_index < project.layers.size():
+				project.export_profile.export_layers = layer_index + 2
 
 	static func dummy(_project: Project, _next_arg: String) -> void:
 		pass
@@ -590,13 +620,21 @@ func show_save_dialog(project := Global.current_project) -> void:
 		save_sprite_html5.popup_centered_clamped()
 		var save_filename_line_edit := save_sprite_html5.get_node("%FileNameLineEdit")
 		save_filename_line_edit.text = project.name
+		var save_include_blended = save_sprite_html5.get_node("%IncludeBlended")
+		save_include_blended.button_pressed = project.include_blended_images
 	else:
 		save_sprite_dialog.current_file = project.name + ".pxo"
+		if save_sprite_dialog.option_count > 0:
+			save_sprite_dialog.set_option_default(0, project.include_blended_images)
 		save_sprite_dialog.popup_centered_clamped()
 		save_file_dialog_opened.emit(true)
 
 
 func _on_SaveSprite_file_selected(path: String) -> void:
+	if save_sprite_dialog.get_selected_options().size() > 0:
+		Global.current_project.include_blended_images = save_sprite_dialog.get_selected_options()[
+			save_sprite_dialog.get_option_name(0)
+		]
 	save_project(path)
 	save_file_dialog_opened.emit(false)
 
@@ -606,24 +644,21 @@ func _on_save_sprite_canceled() -> void:
 	is_quitting_on_save = false
 
 
-func save_project(path: String, through_dialog := true) -> void:
-	var project_to_save := Global.current_project
+func _on_save_sprite_html_5_confirmed() -> void:
+	var include_blended: bool = save_sprite_html5.get_node("%IncludeBlended").button_pressed
+	Global.current_project.include_blended_images = include_blended
+	var save_filename_line_edit := save_sprite_html5.get_node("%FileNameLineEdit")
+	Global.current_project.name = save_filename_line_edit.text
+	save_project("")
+
+
+func save_project(path: String, project_to_save := Global.current_project) -> void:
 	if is_quitting_on_save:
 		project_to_save = changed_projects_on_quit[0]
-	var include_blended := false
 	if OS.get_name() == "Web":
-		if through_dialog:
-			var save_filename_line_edit := save_sprite_html5.get_node("%FileNameLineEdit")
-			project_to_save.name = save_filename_line_edit.text
 		var file_name := project_to_save.name + ".pxo"
 		path = "user://".path_join(file_name)
-		include_blended = save_sprite_html5.get_node("%IncludeBlended").button_pressed
-	else:
-		if save_sprite_dialog.get_selected_options().size() > 0:
-			include_blended = save_sprite_dialog.get_selected_options()[
-				save_sprite_dialog.get_option_name(0)
-			]
-	var success := OpenSave.save_pxo_file(path, false, include_blended, project_to_save)
+	var success := OpenSave.save_pxo_file(path, false, project_to_save)
 	if success:
 		open_sprite_dialog.current_dir = path.get_base_dir()
 	if is_quitting_on_save:

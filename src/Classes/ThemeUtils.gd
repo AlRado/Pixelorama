@@ -11,6 +11,7 @@ static var theme_properties: Dictionary[String, Array] = {
 		ThemeProperty.new(&"disabled", &"Button", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"normal", &"Button", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"pressed", &"Button", Theme.DATA_TYPE_STYLEBOX),
+		ThemeProperty.new(&"panel", &"FoldableContainer", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"title_panel", &"FoldableContainer", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(
 			&"title_hover_panel", &"FoldableContainer", Theme.DATA_TYPE_STYLEBOX, true
@@ -47,7 +48,6 @@ static var theme_properties: Dictionary[String, Array] = {
 	[
 		ThemeProperty.new(&"normal", &"CelButton", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"panel", &"PanelContainer", Theme.DATA_TYPE_STYLEBOX),
-		ThemeProperty.new(&"panel", &"FoldableContainer", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"panel", &"AcceptDialog", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"panel", &"TabContainer", Theme.DATA_TYPE_STYLEBOX),
 		ThemeProperty.new(&"panel", &"Tree", Theme.DATA_TYPE_STYLEBOX),
@@ -144,6 +144,7 @@ static var theme_properties: Dictionary[String, Array] = {
 		ThemeProperty.new(&"font_color", &"OptionButton"),
 		ThemeProperty.new(&"font_color", &"ProgressBar"),
 		ThemeProperty.new(&"font_color", &"Label"),
+		ThemeProperty.new(&"default_color", &"RichTextLabel"),
 		ThemeProperty.new(&"font_color", &"LineEdit"),
 		ThemeProperty.new(
 			&"font_placeholder_color",
